@@ -1,15 +1,18 @@
 #include <chrono>
+#include <cstddef>
 #include <iostream>
 #include <ostream>
 
 #include "NPUDriver.h"
 
-#define BUF_SIZE (1024 * 1024 * 1024)
+#define BUF_SIZE (1024 * 32)
 
 ssize_t test_memcpy(const struct NPUDeviceState *device) {
   ssize_t ret;
 
-  uint64_t device_addr = 0x00000000;
+  const uint64_t device_addr = 0x80000000;
+
+  const size_t test_num = 8192;
 
   char *h2c_buf = (char *)aligned_alloc(4096, BUF_SIZE);
   if (!h2c_buf) {
@@ -23,7 +26,9 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
   }
 
   auto h2c_start = std::chrono::high_resolution_clock::now();
-  ret = npu_memcpy_to_dev(device, device_addr, h2c_buf, BUF_SIZE);
+  for (size_t i = 0; i < test_num; i++) {
+    ret = npu_memcpy_to_dev(device, device_addr, h2c_buf, BUF_SIZE);
+  }
   auto h2c_end = std::chrono::high_resolution_clock::now();
 
   if (ret < 0) {
@@ -32,9 +37,9 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
   }
 
   std::chrono::duration<double> h2c_duration = h2c_end - h2c_start;
-  double h2c_speed = ret / (1024.0 * 1024.0) / h2c_duration.count();
+  double h2c_speed = ret * test_num / (1024.0 * 1024.0) / h2c_duration.count();
 
-  std::cout << "H2C: Wrote " << ret << " bytes to device. ";
+  std::cout << "H2C: Wrote " << ret << "*" << test_num << " bytes to device. ";
   std::cout << "Speed: " << h2c_speed << " MiB/s" << std::endl;
 
   char *c2h_buf = (char *)aligned_alloc(4096, BUF_SIZE);
@@ -45,7 +50,9 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
   std::cout << "c2h_buf address: " << static_cast<void *>(c2h_buf) << std::endl;
 
   auto c2h_start = std::chrono::high_resolution_clock::now();
-  ret = npu_memcpy_from_dev(device, c2h_buf, device_addr, BUF_SIZE);
+  for (size_t i = 0; i < test_num; i++) {
+    ret = npu_memcpy_from_dev(device, c2h_buf, device_addr, BUF_SIZE);
+  }
   auto c2h_end = std::chrono::high_resolution_clock::now();
 
   if (ret < 0) {
@@ -54,9 +61,9 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
   }
 
   std::chrono::duration<double> c2h_duration = c2h_end - c2h_start;
-  double c2h_speed = ret / (1024.0 * 1024.0) / c2h_duration.count();
+  double c2h_speed = ret * test_num/ (1024.0 * 1024.0) / c2h_duration.count();
 
-  std::cout << "C2H: Read " << ret << " bytes from device. ";
+  std::cout << "C2H: Read " << ret << "*" << test_num << " bytes from device. ";
   std::cout << "Speed: " << c2h_speed << " MiB/s" << std::endl;
 
   bool match = true;
