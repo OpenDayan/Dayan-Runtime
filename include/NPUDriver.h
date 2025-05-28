@@ -14,6 +14,7 @@ struct NPUDeviceState {
   size_t xdma_id;
   int xdma_c2h_fd;
   int xdma_h2c_fd;
+  uint8_t valid;
 };
 
 // All Driver APIs are synchronous
@@ -44,8 +45,8 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
 ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
                             uint64_t src, size_t size);
 
-void npu_reset(const struct NPUDeviceState *device);
-void npu_start(const struct NPUDeviceState *device, uint64_t boot_address);
+ssize_t npu_reset(const struct NPUDeviceState *device);
+ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address);
 
 // function return negative values on error
 typedef enum {
@@ -56,7 +57,7 @@ typedef enum {
   NPU_DEVICE_ERRNO_INVALID_ADDRESS,
   NPU_DEVICE_ERRNO_INVALID_SIZE,
   NPU_DEVICE_ERRNO_INVALID_ARGS, // null pointers, etc.
-} npu_device_errno_t;
+} NPUDeviceErrno_t;
 
 #ifdef __cplusplus
 }

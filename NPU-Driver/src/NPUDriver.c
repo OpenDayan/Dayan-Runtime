@@ -3,12 +3,17 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "NPUDriver.h"
 
 #define H2C_DEV "/dev/xdma0_h2c_0"
 #define C2H_DEV "/dev/xdma0_c2h_0"
+
+#define MMIO_ADDR_BOOT_ADDR_REG 0x1000
+#define MMIO_ADDR_TILE_RESET_CTRL 0x110000
+#define MMIO_ADDR_CLINT 0x2000000
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +43,8 @@ ssize_t npu_device_init(struct NPUDeviceState *device) {
     ret = -NPU_DEVICE_ERRNO_IO;
     goto xdma_c2h_error;
   }
+
+  device->valid = 1; // Mark the device as valid
 
   return NPU_DEVICE_SUCCESS;
 
@@ -70,15 +77,17 @@ void npu_device_deinit(struct NPUDeviceState *device) {
     close(device->xdma_h2c_fd);
     device->xdma_h2c_fd = -1;
   }
+
+  device->valid = 0; // Mark the device as invalid
 }
 
-#define FUNC_NPU_MMIO_READ(type, width)                                        \
-  ssize_t npu_mmio_read##width(const struct NPUDeviceState *device,            \
-                               uint64_t address, type *value) {                \
+#define FUNC_NPU_MMIO_READ(type, name)                                         \
+  ssize_t npu_mmio_read##name(const struct NPUDeviceState *device,             \
+                              uint64_t address, type *value) {                 \
     if (device == NULL || value == NULL) {                                     \
       return -NPU_DEVICE_ERRNO_INVALID_ARGS;                                   \
     }                                                                          \
-    if (device->xdma_c2h_fd < 0) {                                             \
+    if (!device->valid) {                                                      \
       return -NPU_DEVICE_ERRNO_UNINITIALIZED;                                  \
     }                                                                          \
     if (address % sizeof(type) != 0) {                                         \
@@ -101,14 +110,14 @@ void npu_device_deinit(struct NPUDeviceState *device) {
     return ret;                                                                \
   }
 
-#define FUNC_NPU_MMIO_WRITE(type, width)                                       \
-  ssize_t npu_mmio_write##type(const struct NPUDeviceState *device,            \
+#define FUNC_NPU_MMIO_WRITE(type, name)                                        \
+  ssize_t npu_mmio_write##name(const struct NPUDeviceState *device,            \
                                uint64_t address, type value) {                 \
                                                                                \
     if (device == NULL) {                                                      \
       return -NPU_DEVICE_ERRNO_INVALID_ARGS;                                   \
     }                                                                          \
-    if (device->xdma_h2c_fd < 0) {                                             \
+    if (!device->valid) {                                                      \
       return -NPU_DEVICE_ERRNO_UNINITIALIZED;                                  \
     }                                                                          \
     if (address % sizeof(type) != 0) {                                         \
@@ -150,7 +159,7 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
     return -NPU_DEVICE_ERRNO_INVALID_ADDRESS;
   }
 
-  if (device->xdma_h2c_fd < 0) {
+  if (!device->valid) {
     return -NPU_DEVICE_ERRNO_UNINITIALIZED;
   }
 
@@ -183,7 +192,7 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
     return -NPU_DEVICE_ERRNO_INVALID_ADDRESS;
   }
 
-  if (device->xdma_c2h_fd < 0) {
+  if (!device->valid) {
     return -NPU_DEVICE_ERRNO_UNINITIALIZED;
   }
 
@@ -206,14 +215,53 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
   return ret;
 }
 
-void npu_reset(const struct NPUDeviceState *device) {
-  // write 0 to the reset register
+ssize_t npu_reset(const struct NPUDeviceState *device) {
+  if (device == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
+
+  ssize_t ret;
+
+  // Reset the NPU by writing to the reset control register
+  ret = npu_mmio_write32(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
+  if (ret < 0) {
+    return ret; // Handle error appropriately
+  }
+
+  // Optionally, wait for a short period to ensure the reset is complete
+  usleep(1000); // Sleep for 1 ms
+
+  ret = npu_mmio_write32(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
+
+  return ret;
 }
-void npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
+
+ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
   // write the boot address to the start register
+
+  if (device == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
+
+  ssize_t ret;
+  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, boot_address);
+  if (ret < 0) {
+    return ret;
+  }
+
+  // write clint msip to start
+  ret = npu_mmio_write32(device, MMIO_ADDR_CLINT, 1);
+  return ret;
 }
 
 #ifdef __cplusplus
 }
-
 #endif
