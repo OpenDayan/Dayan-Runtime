@@ -6,26 +6,52 @@
 
 // Device State Structure
 struct NPUDeviceState {
-    // TODO: Define needed stateful data for the NPU Device here.
+  // TODO: Define needed stateful data for the NPU Device here.
+  size_t xdma_id;
+  int xdma_c2h_fd;
+  int xdma_h2c_fd;
 };
 
+// All Driver APIs are synchronous
+
 // Define Basic Driver API
-void npu_device_init(struct NPUDeviceState* device);
-void npu_device_deinit(struct NPUDeviceState* device);
+ssize_t npu_device_init(struct NPUDeviceState *device);
+void npu_device_deinit(struct NPUDeviceState *device);
 
-void npu_mmio_read64(struct NPUDeviceState* device, uint64_t address, uint64_t *value);
-void npu_mmio_write64(struct NPUDeviceState* device, uint64_t address, uint64_t value);
-void npu_mmio_read32(struct NPUDeviceState* device, uint64_t address, uint32_t *value);
-void npu_mmio_write32(struct NPUDeviceState* device, uint64_t address, uint32_t value);
-void npu_mmio_read16(struct NPUDeviceState* device, uint64_t address, uint16_t *value);
-void npu_mmio_write16(struct NPUDeviceState* device, uint64_t address, uint16_t value);
-void npu_mmio_read8(struct NPUDeviceState* device, uint64_t address, uint8_t *value);
-void npu_mmio_write8(struct NPUDeviceState* device, uint64_t address, uint8_t value);
+ssize_t npu_mmio_read64(struct NPUDeviceState *device, uint64_t address,
+                        uint64_t *value);
+ssize_t npu_mmio_write64(struct NPUDeviceState *device, uint64_t address,
+                         uint64_t value);
+ssize_t npu_mmio_read32(struct NPUDeviceState *device, uint64_t address,
+                        uint32_t *value);
+ssize_t npu_mmio_write32(struct NPUDeviceState *device, uint64_t address,
+                         uint32_t value);
+ssize_t npu_mmio_read16(struct NPUDeviceState *device, uint64_t address,
+                        uint16_t *value);
+ssize_t npu_mmio_write16(struct NPUDeviceState *device, uint64_t address,
+                         uint16_t value);
+ssize_t npu_mmio_read8(struct NPUDeviceState *device, uint64_t address,
+                       uint8_t *value);
+ssize_t npu_mmio_write8(struct NPUDeviceState *device, uint64_t address,
+                        uint8_t value);
 
-void npu_memcpy_to_dev  (struct NPUDeviceState* device, uint64_t dst, void *src, size_t size);
-void npu_memcpy_from_dev(struct NPUDeviceState* device, void *dst, uint64_t src, size_t size);
+ssize_t npu_memcpy_to_dev(struct NPUDeviceState *device, uint64_t dst,
+                          void *src, size_t size);
+ssize_t npu_memcpy_from_dev(struct NPUDeviceState *device, void *dst,
+                            uint64_t src, size_t size);
 
-void npu_reset(struct NPUDeviceState* device);
-void npu_start(struct NPUDeviceState* device, uint64_t boot_address);
+void npu_reset(struct NPUDeviceState *device);
+void npu_start(struct NPUDeviceState *device, uint64_t boot_address);
+
+// function return negative values on error
+typedef enum {
+  NPU_DEVICE_SUCCESS,
+  NPU_DEVICE_ERRNO_UNINITIALIZED,
+  NPU_DEVICE_ERRNO_UNSUPPORTED,
+  NPU_DEVICE_ERRNO_IO,
+  NPU_DEVICE_ERRNO_INVALID_ADDRESS,
+  NPU_DEVICE_ERRNO_INVALID_SIZE,
+  NPU_DEVICE_ERRNO_INVALID_ARGS, // null pointers, etc.
+} npu_device_errno_t;
 
 #endif
