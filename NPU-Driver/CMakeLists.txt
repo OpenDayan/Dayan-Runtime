@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
-project(npu-driver LANGUAGES C)
+project(npu-driver-test LANGUAGES C CXX)
 
-file(GLOB SOURCES src/*.c test/*.c)
+file(GLOB SOURCES src/*.c test/*.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

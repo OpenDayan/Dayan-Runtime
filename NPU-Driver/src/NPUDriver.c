@@ -10,6 +10,10 @@
 #define H2C_DEV "/dev/xdma0_h2c_0"
 #define C2H_DEV "/dev/xdma0_c2h_0"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 ssize_t npu_device_init(struct NPUDeviceState *device) {
   ssize_t ret;
   if (device == NULL) {
@@ -69,7 +73,7 @@ void npu_device_deinit(struct NPUDeviceState *device) {
 }
 
 #define FUNC_NPU_MMIO_READ(type, width)                                        \
-  ssize_t npu_mmio_read##width(struct NPUDeviceState *device,                  \
+  ssize_t npu_mmio_read##width(const struct NPUDeviceState *device,            \
                                uint64_t address, type *value) {                \
     if (device == NULL || value == NULL) {                                     \
       return -NPU_DEVICE_ERRNO_INVALID_ARGS;                                   \
@@ -98,7 +102,7 @@ void npu_device_deinit(struct NPUDeviceState *device) {
   }
 
 #define FUNC_NPU_MMIO_WRITE(type, width)                                       \
-  ssize_t npu_mmio_write##type(struct NPUDeviceState *device,                  \
+  ssize_t npu_mmio_write##type(const struct NPUDeviceState *device,            \
                                uint64_t address, type value) {                 \
                                                                                \
     if (device == NULL) {                                                      \
@@ -136,7 +140,7 @@ FUNC_NPU_MMIO_WRITE(uint32_t, 32)
 FUNC_NPU_MMIO_WRITE(uint16_t, 16)
 FUNC_NPU_MMIO_WRITE(uint8_t, 8)
 
-ssize_t npu_memcpy_to_dev(struct NPUDeviceState *device, uint64_t dst,
+ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
                           void *src, size_t size) {
   if (device == NULL) {
     return -NPU_DEVICE_ERRNO_INVALID_ARGS;
@@ -169,7 +173,7 @@ ssize_t npu_memcpy_to_dev(struct NPUDeviceState *device, uint64_t dst,
   return ret;
 }
 
-ssize_t npu_memcpy_from_dev(struct NPUDeviceState *device, void *dst,
+ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
                             uint64_t src, size_t size) {
   if (device == NULL) {
     return -NPU_DEVICE_ERRNO_INVALID_ARGS;
@@ -202,10 +206,14 @@ ssize_t npu_memcpy_from_dev(struct NPUDeviceState *device, void *dst,
   return ret;
 }
 
-void npu_reset(struct NPUDeviceState *device) {
+void npu_reset(const struct NPUDeviceState *device) {
   // write 0 to the reset register
 }
-void npu_start(struct NPUDeviceState *device, uint64_t boot_address) {
+void npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
   // write the boot address to the start register
 }
 
+#ifdef __cplusplus
+}
+
+#endif
