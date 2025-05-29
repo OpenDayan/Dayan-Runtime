@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define NPU_MAX_KERNEL_ARGS 8
+#define NPU_MAX_KERNEL_ARGS 30
 
 // Device Kernel Set Description Structure
 struct NPUDeviceKernelSetDesc {
@@ -39,7 +39,9 @@ struct NPURuntimeState {
 
 struct GeneralEntryArgs {
   uint64_t kernel_entry;
-  uint64_t args[0];
+  uint32_t ret;
+  uint32_t arg_count;
+  uint64_t args[NPU_MAX_KERNEL_ARGS];
 };
 
 // Kernel Description Structure
@@ -58,27 +60,25 @@ typedef enum {
 } NPURuntimeError_t;
 
 // Define Basic Runtime API
-NPURuntimeError_t npu_runtime_init(struct NPURuntimeState *runtime);
+ssize_t npu_runtime_init(struct NPURuntimeState *runtime);
 void npu_runtime_deinit(struct NPURuntimeState *runtime);
 
-NPURuntimeError_t npu_runtime_load_kernelset(
+ssize_t npu_runtime_load_kernelset(
     struct NPURuntimeState *runtime,
     const struct NPUDeviceKernelSetDesc *kernel_set_desc);
 
-NPURuntimeError_t
-npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
-                         const struct NPUKernelDesc *kernel_desc,
-                         uint64_t *args, size_t arg_count);
+ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
+    const struct NPUKernelDesc *kernel_desc,
+    int* kernel_ret, size_t arg_count, ...);
 
 // Device Memory Management
-NPURuntimeError_t npu_runtime_malloc(const struct NPURuntimeState *runtime,
+ssize_t npu_runtime_malloc(const struct NPURuntimeState *runtime,
                                      void **dev_ptr, size_t size);
-NPURuntimeError_t npu_runtime_free(const struct NPURuntimeState *runtime,
+ssize_t npu_runtime_free(const struct NPURuntimeState *runtime,
                                    void *dev_ptr);
-NPURuntimeError_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
+ssize_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
                                       size_t size, uint64_t start_address);
-
-NPURuntimeError_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
+ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   const char *kernel_name,
   struct NPUKernelDesc **kernel_desc_out);
 

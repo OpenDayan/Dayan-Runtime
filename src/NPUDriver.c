@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -215,7 +216,9 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
   return ret;
 }
 
-ssize_t npu_reset(const struct NPUDeviceState *device) {
+// Check device state: WaitLaunch / Busy / Empty
+ssize_t npu_check(const struct NPUDeviceState *device) {
+
   if (device == NULL) {
     return -NPU_DEVICE_ERRNO_INVALID_ARGS;
   }
@@ -225,22 +228,51 @@ ssize_t npu_reset(const struct NPUDeviceState *device) {
   }
 
   ssize_t ret;
-
-  // Reset the NPU by writing to the reset control register
-  ret = npu_mmio_write8(device, MMIO_ADDR_TILE_RESET_CTRL, 1);
+  uint64_t boot_address;
+  ret = npu_mmio_read64(device, MMIO_ADDR_BOOT_ADDR_REG, &boot_address);
   if (ret < 0) {
-    return ret; // Handle error appropriately
+    return ret;
+  }
+  if(boot_address == 0x0) {
+    // Busy
+    return -NPU_DEVICE_ERRNO_BUSY;
+  } else if(boot_address == 0x10000) {
+    // Empty
+    return -NPU_DEVICE_ERRNO_EMPTY;
+  } else {
+    // Kernel not launch yet
+    return -NPU_DEVICE_ERRNO_WAITLAUNCH;
+  }
+}
+
+// NPU_DEVICE_ERRNO_EMPTY -> WaitLaunch
+ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
+  if (device == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
   }
 
-  // Optionally, wait for a short period to ensure the reset is complete
-  usleep(1000); // Sleep for 1 ms
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
 
-  ret = npu_mmio_write8(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
+  ssize_t ret;
+  ret = npu_check(device);
+  if(ret != -NPU_DEVICE_ERRNO_EMPTY) {
+    return ret;
+  }
 
+  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, boot_address);
+  if (ret < 0) {
+    return ret;
+  }
+
+  // write clint msip to start
+  ret = npu_mmio_write32(device, MMIO_ADDR_CLINT, 1);
   return ret;
 }
 
-ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
+// Any state -> NPU_DEVICE_ERRNO_EMPTY
+ssize_t npu_abort(const struct NPUDeviceState *device) {
   // write the boot address to the start register
 
   if (device == NULL) {
@@ -252,7 +284,8 @@ ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
   }
 
   ssize_t ret;
-  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, boot_address);
+
+  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, 0x10000);
   if (ret < 0) {
     return ret;
   }
