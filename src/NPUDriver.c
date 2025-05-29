@@ -227,7 +227,7 @@ ssize_t npu_reset(const struct NPUDeviceState *device) {
   ssize_t ret;
 
   // Reset the NPU by writing to the reset control register
-  ret = npu_mmio_write32(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
+  ret = npu_mmio_write8(device, MMIO_ADDR_TILE_RESET_CTRL, 1);
   if (ret < 0) {
     return ret; // Handle error appropriately
   }
@@ -235,7 +235,7 @@ ssize_t npu_reset(const struct NPUDeviceState *device) {
   // Optionally, wait for a short period to ensure the reset is complete
   usleep(1000); // Sleep for 1 ms
 
-  ret = npu_mmio_write32(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
+  ret = npu_mmio_write8(device, MMIO_ADDR_TILE_RESET_CTRL, 0);
 
   return ret;
 }
