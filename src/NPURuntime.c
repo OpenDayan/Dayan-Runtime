@@ -114,6 +114,23 @@ NPURuntimeError_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
   return NPU_SUCCESS;
 }
 
+NPURuntimeError_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
+                                              const char *kernel_name,
+                                              struct NPUKernelDesc **kernel_desc_out) {
+  if (runtime == NULL || kernel_name == NULL || kernel_desc_out == NULL) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  for (size_t i = 0; i < runtime->kernel_set_desc.kernel_count; i++) {
+    if (strcmp(runtime->kernel_set_desc.kernels[i].name, kernel_name) == 0) {
+      *kernel_desc_out = &runtime->kernel_set_desc.kernels[i];
+      return NPU_SUCCESS;
+    }
+  }
+
+  return NPU_ERROR_KERNEL_NOT_FOUND;
+}
+
 #ifdef __cplusplus
 }
 #endif
