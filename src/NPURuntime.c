@@ -104,17 +104,17 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
 
   long t0 = 0;
   while(1) {
-    t0++;
     ret = npu_check(&runtime->dev_state);
     if(ret == -NPU_DEVICE_ERRNO_EMPTY) {
       if(kernel_ret) {
-        npu_memcpy_from_dev(&runtime->dev_state, kernel_ret, runtime->kernel_set_desc.args_ptr + 4, sizeof(int));
+        npu_memcpy_from_dev(&runtime->dev_state, kernel_ret, runtime->kernel_set_desc.args_ptr + 8, sizeof(int));
       }
+      printf("Exit using %ldus\n",t0 * 100);
       return NPU_SUCCESS;
     }
-    usleep(1000); // 1ms
+    t0++;
+    usleep(100); // 0.1ms
   }
-  printf("Exit using %ldms",t0);
 }
 
 // Device Memory Management
