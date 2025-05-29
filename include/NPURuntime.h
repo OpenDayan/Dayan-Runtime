@@ -78,6 +78,7 @@ NPURuntimeError_t npu_runtime_free(const struct NPURuntimeState *runtime,
 NPURuntimeError_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
                                       size_t size, uint64_t start_address);
 
+struct NPUKernelDesc *npu_runtime_get_kernel_desc(struct NPURuntimeState *runtime, const char *kernel_name);
 #ifdef __cplusplus
 }
 #endif
