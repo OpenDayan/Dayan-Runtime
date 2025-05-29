@@ -17,6 +17,7 @@ NPURuntimeError_t npu_runtime_init(struct NPURuntimeState *runtime) {
 
   ret = npu_device_init(&runtime->dev_state);
   if (ret < 0) {
+    printf("Failed to initialize NPU device: %zd\n", ret);
     return NPU_ERROR_DEVICE_FAILURE;
   }
 
@@ -35,6 +36,12 @@ NPURuntimeError_t npu_runtime_load_kernelset(
   runtime->kernel_set_desc = *kernel_set_desc;
 
   ssize_t ret;
+
+  ret = npu_reset(&runtime->dev_state);
+  if (ret < 0) {
+    printf("Failed to reset NPU device: %zd\n", ret);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
 
   // load bin
   ret = npu_memcpy_to_dev(&runtime->dev_state,
@@ -61,10 +68,12 @@ npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
 
   ssize_t ret;
 
+  size_t general_entry_args_size =
+      sizeof(struct GeneralEntryArgs) + (arg_count * sizeof(uint64_t));
+
   struct GeneralEntryArgs *general_entry_args =
       (struct GeneralEntryArgs *)malloc(
-          sizeof(struct GeneralEntryArgs) +
-          (arg_count * sizeof(uint64_t))); // Allocate memory for args
+          general_entry_args_size); // Allocate memory for args
 
   if (general_entry_args == NULL) {
     return NPU_ERROR_OUT_OF_MEMORY;
@@ -77,21 +86,18 @@ npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
 
   ret =
       npu_memcpy_to_dev(&runtime->dev_state, runtime->kernel_set_desc.args_ptr,
-                        &general_entry_args, arg_count * sizeof(uint64_t));
+                        general_entry_args, general_entry_args_size);
 
   free(general_entry_args); // Free the allocated memory
 
   if (ret < 0) {
-    return NPU_ERROR_DEVICE_FAILURE;
-  }
-
-  ret = npu_reset(&runtime->dev_state);
-  if (ret < 0) {
+    printf("Failed to copy arguments to device: %zd\n", ret);
     return NPU_ERROR_DEVICE_FAILURE;
   }
 
   ret = npu_start(&runtime->dev_state, runtime->kernel_set_desc.general_entry);
   if (ret < 0) {
+    printf("Failed to start NPU device: %zd\n", ret);
     return NPU_ERROR_DEVICE_FAILURE;
   }
 
@@ -114,9 +120,10 @@ NPURuntimeError_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
   return NPU_SUCCESS;
 }
 
-NPURuntimeError_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
-                                              const char *kernel_name,
-                                              struct NPUKernelDesc **kernel_desc_out) {
+NPURuntimeError_t
+npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
+                            const char *kernel_name,
+                            struct NPUKernelDesc **kernel_desc_out) {
   if (runtime == NULL || kernel_name == NULL || kernel_desc_out == NULL) {
     return NPU_ERROR_INVALID_ARGUMENT;
   }
