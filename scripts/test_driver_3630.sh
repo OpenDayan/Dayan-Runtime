@@ -2,8 +2,8 @@
 
 
 BUILD_DIR="../build"
-EXECUTABLE="npu-driver-test"
-REMOTE_HOST="z370"
+EXECUTABLE="npu-test_driver"
+REMOTE_HOST="3630"
 REMOTE_DIR="~/test_dir"
 
 # copy to remote
