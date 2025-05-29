@@ -86,7 +86,7 @@ npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
 
   ret =
       npu_memcpy_to_dev(&runtime->dev_state, runtime->kernel_set_desc.args_ptr,
-                        &general_entry_args, general_entry_args_size);
+                        general_entry_args, general_entry_args_size);
 
   free(general_entry_args); // Free the allocated memory
 
