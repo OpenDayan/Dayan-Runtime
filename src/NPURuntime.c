@@ -80,6 +80,9 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
   general_entry_args.kernel_entry = kernel_desc->entry;
   general_entry_args.arg_count = arg_count;
   general_entry_args.ret = 0xdeadbeaf;
+  general_entry_args.putchar_buf = 0x80040000; // 0x80040000 - 0x81000000 is putchar buf
+  general_entry_args.putchar_buflength = 0x81000000 - 0x80040000;
+  general_entry_args.putchar_wptr = 0;
 
   va_list args;
   va_start(args, arg_count);
@@ -106,8 +109,15 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
   while(1) {
     ret = npu_check(&runtime->dev_state);
     if(ret == -NPU_DEVICE_ERRNO_EMPTY) {
+      ret = npu_memcpy_from_dev(&runtime->dev_state, &general_entry_args,
+        runtime->kernel_set_desc.args_ptr, sizeof(general_entry_args) - 30 * sizeof(uint64_t));
       if(kernel_ret) {
-        npu_memcpy_from_dev(&runtime->dev_state, kernel_ret, runtime->kernel_set_desc.args_ptr + 8, sizeof(int));
+        *kernel_ret = general_entry_args.ret;
+      }
+      static char printbuf[0x1000000];
+      npu_memcpy_from_dev(&runtime->dev_state, printbuf, general_entry_args.putchar_buf, general_entry_args.putchar_wptr);
+      for(long i = 0 ; i < general_entry_args.putchar_wptr ; i ++) {
+        putchar(printbuf[i]);
       }
       printf("Exit using %ldus\n",t0 * 100);
       return NPU_SUCCESS;

@@ -41,6 +41,9 @@ struct GeneralEntryArgs {
   uint64_t kernel_entry;
   uint32_t ret;
   uint32_t arg_count;
+  uint64_t putchar_buf;
+  uint64_t putchar_buflength;
+  uint64_t putchar_wptr;
   uint64_t args[NPU_MAX_KERNEL_ARGS];
 };
 
