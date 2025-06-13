@@ -4,7 +4,9 @@ set(SOURCE src/NPUDriver.c src/NPURuntime.c)
 
 add_executable(npu-test_driver ${SOURCE} test/test_driver.cpp)
 add_executable(npu-test_runtime ${SOURCE} test/test_runtime.cpp test/test_runtime_kernel.cpp)
+add_executable(npu-test_matmul_e4m3q ${SOURCE} test/test_matmul_e4m3q.cpp test/general_entry_fpga.packed.c)
 
 include_directories(include)
+include_directories(npu-kernels/include)
 
 set(CMAKE_EXE_LINKER_FLAGS "-static")
