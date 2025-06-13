@@ -27,7 +27,7 @@
 #define fp_checkr(m, n, x, expect, eps)                                                                      \
     if ((x) < (expect) - (eps) || (x) > (expect) + (eps))                                                    \
     {                                                                                                        \
-        printf("Error: %s:%d: (%d,%d) %s = %f, expected %f\n", __FILE__, __LINE__, m, n, #x, (x), (expect)); \
+        printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, m, n, #x, *(int*)&(x), *(int*)&(expect)); \
         exit(-1);                                                                                            \
     }
 
@@ -200,19 +200,19 @@ static void testrt_npu_memcpy_in(uint64_t lda, uint64_t ldb, uint64_t ldc) {
     printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%d\n", src_1_addr, ret);
   printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n", N * ldb, src_1_addr);
 
-  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c, M * ldc * sizeof(float));
+  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c, N * ldc * sizeof(float));
   if (ret < 0)
     printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%d\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n", M * ldc * sizeof(float), dst_0_addr);
+  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
 }
 
 static void testrt_npu_memcpy_out(uint64_t ldc) {
   printf("[INFO] Copy data from device ... \n");
   size_t ret = 0;
-  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, M * ldc * sizeof(float));
+  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, N * ldc * sizeof(float));
   if (ret < 0)
     printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%d\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", M * ldc * sizeof(float), dst_0_addr);
+  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
 }
 
 void check_result() {
