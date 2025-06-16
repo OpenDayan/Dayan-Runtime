@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "NPUDriver.h"
 #include "NPURuntime.h"
@@ -11,21 +12,21 @@
 
 
 #define check(x, expect)                                                                                     \
-    if ((x) != (expect))                                                                                     \
+    if (isnan(x) || (x) != (expect))                                                                                     \
     {                                                                                                        \
         printf("Error: %s:%d: (%d,%d) %s = %d, expected %d\n", __FILE__, __LINE__, m, n, #x, (x), (expect)); \
         exit(-1);                                                                                      \
     }
 
 #define fp_check(x, expect, eps)                                                               \
-    if ((x) < (expect) - (eps) || (x) > (expect) + (eps))                                      \
+    if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                      \
     {                                                                                          \
         printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x, (x), (expect)); \
         exit(-1);                                                                             \
     }
 
 #define fp_checkr(m, n, x, expect, eps)                                                                      \
-    if ((x) < (expect) - (eps) || (x) > (expect) + (eps))                                                    \
+    if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                                    \
     {                                                                                                        \
         printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, m, n, #x, *(int*)&(x), *(int*)&(expect)); \
     }
@@ -172,7 +173,6 @@ static void testrt_run_tx_init_kernel() {
   }
   printf("[INFO] Kernel __tx_init run successfully.\n");
 }
-
 
 static void testrt_npu_get_kernel_desc() {
   ssize_t err = 0;

@@ -175,9 +175,13 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
     return -NPU_DEVICE_ERRNO_IO;
   }
 
-  ret = write(device->xdma_h2c_fd, src, size);
-  if (ret < 0) {
-    return -NPU_DEVICE_ERRNO_IO;
+  uint64_t wsize = 0;
+  while(wsize != size) {
+    ret = write(device->xdma_h2c_fd, src + wsize, size - wsize);
+    if (ret < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
+    wsize += ret;
   }
 
   return ret;
@@ -208,9 +212,13 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
     return -NPU_DEVICE_ERRNO_IO;
   }
 
-  ret = read(device->xdma_c2h_fd, dst, size);
-  if (ret < 0) {
-    return -NPU_DEVICE_ERRNO_IO;
+  uint64_t rsize = 0;
+  while(rsize != size) {
+    ret = read(device->xdma_c2h_fd, dst + rsize, size - rsize);
+    if (ret < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
+    rsize += ret;
   }
 
   return ret;

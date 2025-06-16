@@ -82,7 +82,7 @@ static inline void test_dump_mem(const struct NPUDeviceState *device, uint64_t a
     return;
   }
 
-  ssize_t ret = npu_memcpy_from_dev(device, buf, addr, size);
+  size_t ret = npu_memcpy_from_dev(device, buf, addr, size);
   if (ret < 0)
   {
     printf("Failed to read memory from device: %ld\n", ret);
@@ -90,7 +90,7 @@ static inline void test_dump_mem(const struct NPUDeviceState *device, uint64_t a
     return;
   }
 
-  for (ssize_t i = 0; i < size; i++)
+  for (size_t i = 0; i < size; i++)
   {
     if (i % 16 == 0)
     {
