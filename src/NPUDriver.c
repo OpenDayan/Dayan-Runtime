@@ -9,8 +9,8 @@
 
 #include "NPUDriver.h"
 
-#define H2C_DEV "/dev/xdma0_h2c_0"
-#define C2H_DEV "/dev/xdma0_c2h_0"
+#define H2C_DEV "/tmp/virtual_npu/xdma0_h2c_0"
+#define C2H_DEV "/tmp/virtual_npu/xdma0_c2h_0"
 
 #define MMIO_ADDR_BOOT_ADDR_REG 0x1000
 #define MMIO_ADDR_TILE_RESET_CTRL 0x110000
