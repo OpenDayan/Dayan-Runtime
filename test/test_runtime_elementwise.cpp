@@ -236,7 +236,7 @@ int main(int argc, char **argv) {
   run_kenrel("tx_int_sub_s32", a_in, b_in, c);
   check_result(c_sub_real);
   run_kenrel("tx_int_mul_s32", a_in, b_in, c);
-  //check_result(c_mul_real);
+  check_result(c_mul_real);
 
   run_kenrel("tx_fp_add_fp32", a_fp32_in, b_fp32_in, c_fp32);
   check_fp32_result(c_fp32_add_real);
