@@ -41,9 +41,37 @@ int32_t b_in[M * N] = {
 };
 
 int32_t c[M * N] = {0};
+float c_fp32[M * N] = {0};
+int32_t c_add_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_add_row.gen"
+};
 
-int32_t c_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_row.gen"
+int32_t c_sub_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sub_row.gen"
+};
+
+int32_t c_mul_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_mul_row.gen"
+};
+
+float a_fp32_in[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_float_a_row.gen"
+};
+
+float b_fp32_in[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_float_b_row.gen"
+};
+
+float c_fp32_add_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_add_row.gen"
+};
+
+float c_fp32_sub_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_sub_row.gen"
+};
+
+float c_fp32_mul_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_mul_row.gen"
 };
 
 extern struct NPUDeviceKernelSetDesc __general_entry_fpga;
@@ -112,10 +140,10 @@ static void testrt_npu_get_kernel_desc(const char *kernel_name) {
   printf("[INFO] Loaded '%s' kernel desc successfully.\n", kernel_name);
 }
 
-static void testrt_npu_memcpy_in() {
+static void testrt_npu_memcpy_in(void *input0, void *input1, void *output) {
   printf("[INFO] Copy data to device ... \n");
   size_t ret = 0;
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a_in,
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)input0,
                           M * N * sizeof(int32_t));
   if (ret < 0)
     printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n",
@@ -123,7 +151,7 @@ static void testrt_npu_memcpy_in() {
   printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
          M * N * sizeof(int32_t), src_0_addr);
 
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b_in,
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)input1,
                           M * N * sizeof(int32_t));
   if (ret < 0)
     printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n",
@@ -131,7 +159,7 @@ static void testrt_npu_memcpy_in() {
   printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
          M * N * sizeof(int32_t), src_1_addr);
 
-  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c,
+  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)output,
                           M * N * sizeof(int32_t));
   if (ret < 0)
     printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n",
@@ -140,10 +168,10 @@ static void testrt_npu_memcpy_in() {
          M * N * sizeof(int32_t), dst_0_addr);
 }
 
-static void testrt_npu_memcpy_out() {
+static void testrt_npu_memcpy_out(void *output) {
   printf("[INFO] Copy data from device ... \n");
   size_t ret = 0;
-  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr,
+  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)output, dst_0_addr,
                             M * N * sizeof(int32_t));
   if (ret < 0)
     printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
@@ -152,24 +180,35 @@ static void testrt_npu_memcpy_out() {
          M * N * sizeof(int32_t), dst_0_addr);
 }
 
-void check_result() {
+void check_result(int32_t *output_real) {
   printf("[INFO] Check result ...\n");
   for (int n = 0; n < N; n++) {
     for (int m = 0; m < M; m++) {
-      check(c[n * M + m], c_real[n * M + m]);
+      check(c[n * M + m], output_real[n * M + m]);
     }
   }
   printf("[INFO] Result check successfully!\n");
 }
 
-int run_kenrel(const char *kernel_name) {
+void check_fp32_result(float *output_real) {
+  printf("[INFO] Check result ...\n");
+  for (int n = 0; n < N; n++) {
+    for (int m = 0; m < M; m++) {
+      check(c_fp32[n * M + m], output_real[n * M + m]);
+    }
+  }
+  printf("[INFO] Result check successfully!\n");
+}
+
+int run_kenrel(const char *kernel_name, void *input0, void *input1,
+               void *output) {
   // Get kernel
   testrt_npu_get_kernel_desc(kernel_name);
 
   printf("[INFO] M=%d, N=%d\n", M, N);
 
   // Copy in
-  testrt_npu_memcpy_in();
+  testrt_npu_memcpy_in(input0, input1, output);
 
   int kernel_ret;
   ssize_t err = 0;
@@ -185,18 +224,27 @@ int run_kenrel(const char *kernel_name) {
   printf("[INFO] Kernel %s run successfully.\n", kernel_name);
 
   // Copy out
-  testrt_npu_memcpy_out();
-  // Check result
-  check_result();
+  testrt_npu_memcpy_out(output);
 }
 int main(int argc, char **argv) {
   testrt_npu_init();
   testrt_npu_load_kernel_set();
   testrt_run_tx_init_kernel();
 
-  run_kenrel("tx_int_add_s32");
-  run_kenrel("tx_int_sub_s32");
-  run_kenrel("tx_int_mul_s32");
+  run_kenrel("tx_int_add_s32", a_in, b_in, c);
+  check_result(c_add_real);
+  run_kenrel("tx_int_sub_s32", a_in, b_in, c);
+  check_result(c_sub_real);
+  run_kenrel("tx_int_mul_s32", a_in, b_in, c);
+  //check_result(c_mul_real);
+
+  run_kenrel("tx_fp_add_fp32", a_fp32_in, b_fp32_in, c_fp32);
+  check_fp32_result(c_fp32_add_real);
+  run_kenrel("tx_fp_sub_fp32", a_fp32_in, b_fp32_in, c_fp32);
+  check_fp32_result(c_fp32_sub_real);
+  run_kenrel("tx_fp_mul_fp32", a_fp32_in, b_fp32_in, c_fp32);
+  check_fp32_result(c_fp32_mul_real);
+
   // End
   npu_runtime_deinit(&runtime);
 
