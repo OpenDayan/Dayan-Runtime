@@ -100,15 +100,16 @@ static void testrt_run_tx_init_kernel() {
   printf("[INFO] Kernel __tx_init run successfully.\n");
 }
 
-static void testrt_npu_get_kernel_desc() {
+static void testrt_npu_get_kernel_desc(const char *kernel_name) {
   ssize_t err = 0;
-  err = npu_runtime_get_kernel_desc(&runtime, "tx_int_add_s32", &kernel_desc);
+  err = npu_runtime_get_kernel_desc(&runtime, kernel_name, &kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description: err=%ld\n", err);
+    printf("Failed to get kernel description for '%s': err=%ld\n", kernel_name,
+           err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
-  printf("[INFO] Loaded tx_int_add_s32 kernel desc successfully.\n");
+  printf("[INFO] Loaded '%s' kernel desc successfully.\n", kernel_name);
 }
 
 static void testrt_npu_memcpy_in() {
@@ -161,12 +162,9 @@ void check_result() {
   printf("[INFO] Result check successfully!\n");
 }
 
-int main(int argc, char **argv) {
-  testrt_npu_init();
-  testrt_npu_load_kernel_set();
-  testrt_run_tx_init_kernel();
-
-  testrt_npu_get_kernel_desc();
+int run_kenrel(const char *kernel_name) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
 
   printf("[INFO] M=%d, N=%d\n", M, N);
 
@@ -175,7 +173,7 @@ int main(int argc, char **argv) {
 
   int kernel_ret;
   ssize_t err = 0;
-  printf("[INFO] Start kernel tx_int_add_s32 ... \n");
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
   err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 5,
                                  src_0_addr, src_1_addr, dst_0_addr, M, N);
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
@@ -184,16 +182,23 @@ int main(int argc, char **argv) {
     npu_runtime_deinit(&runtime);
     return -1;
   }
-  printf("[INFO] Kernel tx_int_add_s32 run successfully.\n");
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
 
   // Copy out
   testrt_npu_memcpy_out();
-
-  // End
-  npu_runtime_deinit(&runtime);
-
   // Check result
   check_result();
+}
+int main(int argc, char **argv) {
+  testrt_npu_init();
+  testrt_npu_load_kernel_set();
+  testrt_run_tx_init_kernel();
+
+  run_kenrel("tx_int_add_s32");
+  run_kenrel("tx_int_sub_s32");
+  run_kenrel("tx_int_mul_s32");
+  // End
+  npu_runtime_deinit(&runtime);
 
   return 0;
 }
