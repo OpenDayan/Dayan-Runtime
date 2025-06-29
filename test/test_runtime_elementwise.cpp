@@ -11,7 +11,7 @@
 #include "npu_instruction.hpp"
 
 #define check(x, expect)                                                       \
-  if (isnan(x) || (x) != (expect)) {                                           \
+  if ((x) != (expect)) {                                                       \
     printf("Error: %s:%d: (%d,%d) %s = %d, expected %d\n", __FILE__, __LINE__, \
            m, n, #x, (x), (expect));                                           \
     exit(-1);                                                                  \
@@ -40,7 +40,7 @@ int32_t b_in[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_int_b_row.gen"
 };
 
-int32_t c[M * N];
+int32_t c[M * N] = {0};
 
 int32_t c_real[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_int_c_row.gen"
