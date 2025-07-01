@@ -40,6 +40,10 @@ int32_t b_in[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_int_b_row.gen"
 };
 
+int32_t shift_in[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_shift_row.gen"
+};
+
 int32_t c[M * N] = {0};
 float c_fp32[M * N] = {0};
 int32_t c_add_real[M * N] = {
@@ -52,6 +56,18 @@ int32_t c_sub_real[M * N] = {
 
 int32_t c_mul_real[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_int_c_mul_row.gen"
+};
+
+int32_t c_srl_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_srl_row.gen"
+};
+
+int32_t c_sra_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sra_row.gen"
+};
+
+int32_t c_sll_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sll_row.gen"
 };
 
 float a_fp32_in[M * N] = {
@@ -237,6 +253,12 @@ int main(int argc, char **argv) {
   check_result(c_sub_real);
   run_kenrel("tx_int_mul_s32", a_in, b_in, c);
   check_result(c_mul_real);
+  run_kenrel("tx_int_srl_s32", a_in, shift_in, c);
+  check_result(c_srl_real);
+  run_kenrel("tx_int_sra_s32", a_in, shift_in, c);
+  check_result(c_sra_real);
+  run_kenrel("tx_int_sll_s32", a_in, shift_in, c);
+  check_result(c_sll_real);
 
   run_kenrel("tx_fp_add_fp32", a_fp32_in, b_fp32_in, c_fp32);
   check_fp32_result(c_fp32_add_real);
