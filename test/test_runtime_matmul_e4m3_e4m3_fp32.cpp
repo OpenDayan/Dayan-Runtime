@@ -49,7 +49,10 @@ float c_real[M * N] = {
 fp8 a_e4m3[M * K];
 fp8 b_e4m3[K * N];
 
-float c[M * N];
+float c0[M * N];
+float c1[M * N];
+float c2[M * N];
+float c3[M * N];
 
 extern struct NPUDeviceKernelSetDesc __general_entry_fpga;
 
@@ -128,59 +131,19 @@ static void testrt_run_tx_init_kernel() {
   printf("[INFO] Kernel __tx_init run successfully.\n");
 }
 
-static void testrt_npu_get_kernel_desc() {
+static void testrt_npu_get_kernel_desc(const char *kernel_name) {
   ssize_t err = 0;
-  err = npu_runtime_get_kernel_desc(&runtime, "matmul_e4m3_e4m3_fp32",
-                                    &kernel_desc);
+  err = npu_runtime_get_kernel_desc(&runtime, kernel_name, &kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description: err=%ld\n", err);
+    printf("Failed to get kernel description for '%s': err=%ld\n", kernel_name,
+           err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
-  printf("[INFO] Loaded matmul_fp32_fp32_fp32 kernel desc successfully.\n");
+  printf("[INFO] Loaded '%s' kernel desc successfully.\n", kernel_name);
 }
 
-static void testrt_npu_memcpy_in() {
-  printf("[INFO] Copy data to device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a_e4m3,
-                          M * K * sizeof(fp8));
-  if (ret < 0)
-    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n",
-           src_0_addr, ret);
-  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
-         M * K * sizeof(fp8), src_0_addr);
-
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b_e4m3,
-                          N * K * sizeof(fp8));
-  if (ret < 0)
-    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n",
-           src_1_addr, ret);
-  printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n",
-         N * K * sizeof(fp8), src_1_addr);
-
-  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c,
-                          N * M * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n",
-           dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n",
-         N * M * sizeof(float), dst_0_addr);
-}
-
-static void testrt_npu_memcpy_out() {
-  printf("[INFO] Copy data from device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr,
-                            N * M * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
-           dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n",
-         N * M * sizeof(float), dst_0_addr);
-}
-
-void check_result() {
+void check_result(float *c) {
   printf("[INFO] Check result ...\n");
   for (int m = 0; m < M; m++) {
     for (int n = 0; n < N; n++) {
@@ -190,22 +153,59 @@ void check_result() {
   printf("[INFO] Result check successfully!\n");
 }
 
-int main(int argc, char **argv) {
-  testrt_npu_init();
-  testrt_npu_load_kernel_set();
-  testrt_run_tx_init_kernel();
+static void testrt_npu_memcpy_in(void *input0, void *input1, void *output) {
+  printf("[INFO] Copy data to device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)input0,
+                          M * K * sizeof(fp8));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n",
+           src_0_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         M * K * sizeof(fp8), src_0_addr);
 
-  testrt_npu_get_kernel_desc();
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)input1,
+                          K * N * sizeof(fp8));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n",
+           src_1_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         K * N * sizeof(fp8), src_1_addr);
 
-  printf("[INFO] M=%d, N=%d, K=%d\n", M, N, K);
-  trans_f32_to_e4m3();
+  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)output,
+                          M * N * sizeof(float));
+  if (ret < 0)
+    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n",
+         M * N * sizeof(float), dst_0_addr);
+}
+
+static void testrt_npu_memcpy_out(void *output) {
+  printf("[INFO] Copy data from device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)output, dst_0_addr,
+                            M * N * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n",
+         M * N * sizeof(int32_t), dst_0_addr);
+}
+
+int run_kenrel(const char *kernel_name, void *input0, void *input1,
+               void *output) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
+
+  printf("[INFO] M=%d, N=%d\n", M, N);
 
   // Copy in
-  testrt_npu_memcpy_in();
+  testrt_npu_memcpy_in(input0, input1, output);
 
   int kernel_ret;
   ssize_t err = 0;
-  printf("[INFO] Start kernel matmul_e4m3_e4m3_fp32 ... \n");
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
   err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 6,
                                  src_0_addr, src_1_addr, dst_0_addr, M, N, K);
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
@@ -214,16 +214,37 @@ int main(int argc, char **argv) {
     npu_runtime_deinit(&runtime);
     return -1;
   }
-  printf("[INFO] Kernel matmul_e4m3_e4m3_fp32 run successfully.\n");
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
 
   // Copy out
-  testrt_npu_memcpy_out();
+  testrt_npu_memcpy_out(output);
+}
+
+int main(int argc, char **argv) {
+
+  trans_f32_to_e4m3();
+
+  testrt_npu_init();
+  testrt_npu_load_kernel_set();
+  testrt_run_tx_init_kernel();
+
+  run_kenrel("matmul_e4m3_e4m3_fp32_row_row", a_e4m3, b_e4m3, c0);
+  check_result(c0);
+
+  run_kenrel("matmul_e4m3_e4m3_fp32_row_col", a_e4m3, b_e4m3, c1);
+  check_result(c1);
+
+  run_kenrel("matmul_e4m3_e4m3_fp32_col_row", a_e4m3, b_e4m3, c2);
+  check_result(c2);
+
+  run_kenrel("matmul_e4m3_e4m3_fp32_col_col", a_e4m3, b_e4m3, c3);
+  check_result(c3);
 
   // End
   npu_runtime_deinit(&runtime);
 
   // Check result
-  check_result();
+  
 
   return 0;
 }

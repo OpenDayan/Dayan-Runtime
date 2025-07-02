@@ -18,17 +18,11 @@
         exit(-1);                                                                                      \
     }
 
-#define fp_check(x, expect, eps)                                                               \
-    if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                      \
-    {                                                                                          \
-        printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x, (x), (expect)); \
-        exit(-1);                                                                             \
-    }
-
 #define fp_checkr(m, n, x, expect, eps)                                                                      \
     if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                                    \
     {                                                                                                        \
-        printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, m, n, #x, *(int*)&(x), *(int*)&(expect)); \
+        printf("Error: %s:%d: (%d,%d) %s = %f, expected %f\n", __FILE__, __LINE__, m, n, #x, (x), (expect)); \
+        exit(-1);                                                                                            \
     }
 
 const int M = 2;
@@ -46,7 +40,10 @@ float b_in[K * N] = {
     9.0f, 10.0f, 11.0f, 12.0f
 };
 
-float c[M * N];
+float c0[M * N] = {0};
+float c1[M * N] = {0};
+float c2[M * N] = {0};
+float c3[M * N] = {0};
 
 float c_real[M * N] = {
     // C = A * B
@@ -108,56 +105,95 @@ static void testrt_run_tx_init_kernel() {
   printf("[INFO] Kernel __tx_init run successfully.\n");
 }
 
-static void testrt_npu_get_kernel_desc() {
+static void testrt_npu_get_kernel_desc(const char *kernel_name) {
   ssize_t err = 0;
-  err = npu_runtime_get_kernel_desc(&runtime, "matmul_fp32_fp32_fp32", &kernel_desc);
+  err = npu_runtime_get_kernel_desc(&runtime, kernel_name, &kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description: err=%ld\n", err);
+    printf("Failed to get kernel description for '%s': err=%ld\n", kernel_name,
+           err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
-  printf("[INFO] Loaded matmul_fp32_fp32_fp32 kernel desc successfully.\n");
+  printf("[INFO] Loaded '%s' kernel desc successfully.\n", kernel_name);
 }
 
-
-static void testrt_npu_memcpy_in() {
-  printf("[INFO] Copy data to device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a_in, M  * K * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n", src_0_addr, ret);
-  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n", M  * K * sizeof(float), src_0_addr);
-
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b_in, N * K * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n", src_1_addr, ret);
-  printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n", N * K * sizeof(float), src_1_addr);
-
-  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c, N * M  * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n", N * M * sizeof(float), dst_0_addr);
-}
-
-static void testrt_npu_memcpy_out() {
-  printf("[INFO] Copy data from device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, N * M * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", N * M * sizeof(float), dst_0_addr);
-}
-
-void check_result() {
+void check_result(float *c) {
   printf("[INFO] Check result ...\n");
   for (int n = 0; n < N; n++)
   {
       for (int m = 0; m < M; m++)
       {
-          fp_checkr(m, n, c[n * M + m], c_real[n * M + m], 0.1f);
+          fp_checkr(m, n, c[n * M + m], c_real[n * M + m], 0.0f);
       }
   }
   printf("[INFO] Result check successfully!\n");
+}
+
+static void testrt_npu_memcpy_in(void *input0, void *input1, void *output) {
+  printf("[INFO] Copy data to device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)input0,
+                          M * K * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n",
+           src_0_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         M * K * sizeof(int32_t), src_0_addr);
+
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)input1,
+                          K * N * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n",
+           src_1_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         K * N * sizeof(int32_t), src_1_addr);
+
+  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)output,
+                          M * N * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n",
+         M * N * sizeof(int32_t), dst_0_addr);
+}
+
+static void testrt_npu_memcpy_out(void *output) {
+  printf("[INFO] Copy data from device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)output, dst_0_addr,
+                            M * N * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n",
+         M * N * sizeof(int32_t), dst_0_addr);
+}
+
+int run_kenrel(const char *kernel_name, void *input0, void *input1,
+               void *output) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
+
+  printf("[INFO] M=%d, N=%d\n", M, N);
+
+  // Copy in
+  testrt_npu_memcpy_in(input0, input1, output);
+
+  int kernel_ret;
+  ssize_t err = 0;
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
+  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 6,
+                                 src_0_addr, src_1_addr, dst_0_addr, M, N, K);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    return -1;
+  }
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
+
+  // Copy out
+  testrt_npu_memcpy_out(output);
 }
 
 int main(int argc, char** argv) {
@@ -165,36 +201,21 @@ int main(int argc, char** argv) {
   testrt_npu_load_kernel_set();
   testrt_run_tx_init_kernel();
 
-  testrt_npu_get_kernel_desc();
+  run_kenrel("matmul_fp32_fp32_fp32_row_row", a_in, b_in, c0);
+  check_result(c0);
 
-  printf("[INFO] M=%d, N=%d, K=%d\n", M, N, K);
+  run_kenrel("matmul_fp32_fp32_fp32_row_col", a_in, b_in, c1);
+  check_result(c1);
 
-  // Copy in
-  testrt_npu_memcpy_in();
+  run_kenrel("matmul_fp32_fp32_fp32_col_row", a_in, b_in, c2);
+  check_result(c2);
 
-  int kernel_ret;
-  ssize_t err = 0;
-  printf("[INFO] Start kernel matmul_fp32_fp32_fp32 ... \n");
-  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 6,
-                                 src_0_addr, src_1_addr, dst_0_addr,
-                                 M, N, K
-                                 );
-  printf("[INFO] Kernel ret=%d\n", kernel_ret);
-  if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
-    npu_runtime_deinit(&runtime);
-    return -1;
-  }
-  printf("[INFO] Kernel matmul_fp32_fp32_fp32 run successfully.\n");
-
-  // Copy out
-  testrt_npu_memcpy_out();
+  run_kenrel("matmul_fp32_fp32_fp32_col_col", a_in, b_in, c3);
+  check_result(c3);
 
   // End
   npu_runtime_deinit(&runtime);
 
-  // Check result
-  check_result();
 
   return 0;
 }
