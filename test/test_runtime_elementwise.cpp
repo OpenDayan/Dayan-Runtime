@@ -70,6 +70,19 @@ int32_t c_sll_real[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sll_row.gen"
 };
 
+int32_t c_and_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_and_row.gen"
+};
+
+int32_t c_or_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_or_row.gen"
+};
+
+int32_t c_xor_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_xor_row.gen"
+};
+
+
 float a_fp32_in[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_float_a_row.gen"
 };
@@ -242,6 +255,34 @@ int run_kenrel(const char *kernel_name, void *input0, void *input1,
   // Copy out
   testrt_npu_memcpy_out(output);
 }
+
+int run_lutop_kenrel(const char *kernel_name, void *input0, void *input1,
+               void *output, uint8_t lutop) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
+
+  printf("[INFO] M=%d, N=%d\n", M, N);
+
+  // Copy in
+  testrt_npu_memcpy_in(input0, input1, output);
+
+  int kernel_ret;
+  ssize_t err = 0;
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
+  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 6,
+                                 src_0_addr, src_1_addr, dst_0_addr, M, N, lutop);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    return -1;
+  }
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
+
+  // Copy out
+  testrt_npu_memcpy_out(output);
+}
+
 int main(int argc, char **argv) {
   testrt_npu_init();
   testrt_npu_load_kernel_set();
@@ -259,6 +300,14 @@ int main(int argc, char **argv) {
   check_result(c_sra_real);
   run_kenrel("tx_int_sll_s32", a_in, shift_in, c);
   check_result(c_sll_real);
+ 
+  run_lutop_kenrel("tx_int_lutop_s32", a_in, b_in, c, 8);
+  check_result(c_and_real);
+  run_lutop_kenrel("tx_int_lutop_s32", a_in, b_in, c, 14);
+  check_result(c_or_real);
+  run_lutop_kenrel("tx_int_lutop_s32", a_in, b_in, c, 6);
+  check_result(c_xor_real);
+  
 
   run_kenrel("tx_fp_add_fp32", a_fp32_in, b_fp32_in, c_fp32);
   check_fp32_result(c_fp32_add_real);
