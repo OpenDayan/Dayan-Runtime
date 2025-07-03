@@ -256,6 +256,55 @@ int run_kenrel(const char *kernel_name, void *input0, void *input1,
   testrt_npu_memcpy_out(output);
 }
 
+
+int run_kenrel_with_TCFG(const char *kernel_name, void *input0, void *input1,
+               void *output) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
+
+  printf("[INFO] M=%d, N=%d\n", M, N);
+
+  // Copy in
+  testrt_npu_memcpy_in(input0, input1, output);
+
+  int kernel_ret;
+  ssize_t err = 0;
+  TCFG tcsr[3]{
+    {
+        .dim0 = M,    .stride0 = 1,
+        .dim1 = N,    .stride1 = M,
+        .dim2 = 1,    .stride2 = M * N,  
+        .dim3 = 1,    .stride3 = M * N,
+    },
+    {
+        .dim0 = M,    .stride0 = 1,
+        .dim1 = N,    .stride1 = M,
+        .dim2 = 1,    .stride2 = M * N,  
+        .dim3 = 1,    .stride3 = M * N,
+    },
+    {
+        .dim0 = M,    .stride0 = 1,
+        .dim1 = N,    .stride1 = M,
+        .dim2 = 1,    .stride2 = M * N,  
+        .dim3 = 1,    .stride3 = M * N,
+    }
+};
+
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
+  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 4,
+                                 src_0_addr, src_1_addr, dst_0_addr, tcsr);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    return -1;
+  }
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
+
+  // Copy out
+  testrt_npu_memcpy_out(output);
+}
+
 int run_lutop_kenrel(const char *kernel_name, void *input0, void *input1,
                void *output, uint8_t lutop) {
   // Get kernel
@@ -288,8 +337,10 @@ int main(int argc, char **argv) {
   testrt_npu_load_kernel_set();
   testrt_run_tx_init_kernel();
 
-  run_kenrel("tx_int_add_s32", a_in, b_in, c);
+  //run_kenrel("tx_int_add_s32", a_in, b_in, c);
+  run_kenrel_with_TCFG("tx_int_add_s32", a_in, b_in, c);
   check_result(c_add_real);
+  
   run_kenrel("tx_int_sub_s32", a_in, b_in, c);
   check_result(c_sub_real);
   run_kenrel("tx_int_mul_s32", a_in, b_in, c);
