@@ -111,6 +111,7 @@ static struct NPUKernelDesc *kernel_desc;
 static uint64_t src_0_addr = 0x81000000;
 static uint64_t src_1_addr = 0x82000000;
 static uint64_t dst_0_addr = 0x83000000;
+static uint64_t tcsr_addr  = 0x84000000;
 
 static void testrt_npu_init() {
   ssize_t err = 0;
@@ -270,29 +271,32 @@ int run_kenrel_with_TCFG(const char *kernel_name, void *input0, void *input1,
   int kernel_ret;
   ssize_t err = 0;
   TCFG tcsr[3]{
-    {
-        .dim0 = M,    .stride0 = 1,
-        .dim1 = N,    .stride1 = M,
-        .dim2 = 1,    .stride2 = M * N,  
-        .dim3 = 1,    .stride3 = M * N,
-    },
-    {
-        .dim0 = M,    .stride0 = 1,
-        .dim1 = N,    .stride1 = M,
-        .dim2 = 1,    .stride2 = M * N,  
-        .dim3 = 1,    .stride3 = M * N,
-    },
-    {
-        .dim0 = M,    .stride0 = 1,
-        .dim1 = N,    .stride1 = M,
-        .dim2 = 1,    .stride2 = M * N,  
-        .dim3 = 1,    .stride3 = M * N,
-    }
-};
+      {
+          .dim0 = M,    .stride0 = 1,
+          .dim1 = N,    .stride1 = M,
+          .dim2 = 1,    .stride2 = M * N,  
+          .dim3 = 1,    .stride3 = M * N,
+      },
+      {
+          .dim0 = M,    .stride0 = 1,
+          .dim1 = N,    .stride1 = M,
+          .dim2 = 1,    .stride2 = M * N,  
+          .dim3 = 1,    .stride3 = M * N,
+      },
+      {
+          .dim0 = M,    .stride0 = 1,
+          .dim1 = N,    .stride1 = M,
+          .dim2 = 1,    .stride2 = M * N,  
+          .dim3 = 1,    .stride3 = M * N,
+      }
+  };
+  err = npu_memcpy_to_dev(&runtime.dev_state, tcsr_addr, (void *)tcsr,
+                          sizeof(tcsr));
+  printf("[INFO] Copy tcsr to device with size:%dB and ret:%d\n", sizeof(tcsr), err);
 
   printf("[INFO] Start kernel %s ... \n", kernel_name);
   err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 4,
-                                 src_0_addr, src_1_addr, dst_0_addr, tcsr);
+                                 src_0_addr, src_1_addr, dst_0_addr, tcsr_addr);
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
     printf("[ERROR] Failed to start kernel : err=%ld\n", err);
