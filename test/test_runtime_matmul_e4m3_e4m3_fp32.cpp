@@ -218,6 +218,7 @@ int run_kenrel(const char *kernel_name, void *input0, void *input1,
 
   // Copy out
   testrt_npu_memcpy_out(output);
+  return 0;
 }
 
 int main(int argc, char **argv) {

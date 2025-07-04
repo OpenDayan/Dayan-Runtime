@@ -152,7 +152,6 @@ void check_fp32_result(float *output_real) {
   printf("[INFO] Result check successfully!\n");
 }
 
-
 int run_kenrel(const char *kernel_name, void *input0, 
                void *output, int axis) {
   // Get kernel
@@ -178,6 +177,7 @@ int run_kenrel(const char *kernel_name, void *input0,
 
   // Copy out
   testrt_npu_memcpy_out(output);
+  return 0;
 }
 
 int main(int argc, char **argv) {

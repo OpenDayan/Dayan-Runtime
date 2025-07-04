@@ -135,7 +135,7 @@ static void testrt_npu_init() {
   printf("[INFO] Initializing Runtime..\n");
   err = npu_runtime_init(&runtime);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to initialize Runtime: err=%d\n", err);
+    printf("[ERROR] Failed to initialize Runtime: err=%ld\n", err);
     exit(-1);
   }
   printf("[INFO] Runtime initialized successfully.\n");
@@ -145,7 +145,7 @@ static void testrt_npu_load_kernel_set() {
   ssize_t err = 0;
   err = npu_runtime_load_kernelset(&runtime, &__general_entry_fpga);
   if (err != NPU_SUCCESS) {
-    printf("Failed to load kernel set: err=%d\n", err);
+    printf("Failed to load kernel set: err=%ld\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -157,7 +157,7 @@ static void testrt_run_tx_init_kernel() {
   struct NPUKernelDesc *tx_init_kernel_desc;
   err = npu_runtime_get_kernel_desc(&runtime, "__tx_init", &tx_init_kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description for __tx_init: err=%d\n", err);
+    printf("Failed to get kernel description for __tx_init: err=%ld\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -165,9 +165,9 @@ static void testrt_run_tx_init_kernel() {
   int kernel_ret;
   printf("[INFO] Start kernel __tx_init ... \n");
   err = npu_runtime_kernel_start(&runtime, tx_init_kernel_desc, &kernel_ret, 0);
-  printf("[INFO] Kernel ret=%ld\n", kernel_ret);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to start kernel : err=%d\n", err);
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -178,7 +178,7 @@ static void testrt_npu_get_kernel_desc() {
   ssize_t err = 0;
   err = npu_runtime_get_kernel_desc(&runtime, "gmma_e4m3q_fp32_AT_QK256", &kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description: err=%d\n", err);
+    printf("Failed to get kernel description: err=%ld\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -191,17 +191,17 @@ static void testrt_npu_memcpy_in(uint64_t lda, uint64_t ldb, uint64_t ldc) {
   size_t ret = 0;
   ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a, M * lda * sizeof(uint8_t));
   if (ret < 0)
-    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%d\n", src_0_addr, ret);
+    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n", src_0_addr, ret);
   printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n", M * lda, src_0_addr);
 
   ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b, N * ldb * sizeof(uint8_t));
   if (ret < 0)
-    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%d\n", src_1_addr, ret);
+    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n", src_1_addr, ret);
   printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n", N * ldb, src_1_addr);
 
   ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c, N * ldc * sizeof(float));
   if (ret < 0)
-    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%d\n", dst_0_addr, ret);
+    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n", dst_0_addr, ret);
   printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
 }
 
@@ -210,7 +210,7 @@ static void testrt_npu_memcpy_out(uint64_t ldc) {
   size_t ret = 0;
   ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, N * ldc * sizeof(float));
   if (ret < 0)
-    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%d\n", dst_0_addr, ret);
+    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n", dst_0_addr, ret);
   printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
 }
 
@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
   uint64_t lda = K + K * 4 / QK;
   uint64_t ldb = K + K * 4 / QK;
   uint64_t ldc = M;
-  printf("[INFO] M=%ld, N=%ld, K=%ld\n", M, N, K);
+  printf("[INFO] M=%d, N=%d, K=%d\n", M, N, K);
   printf("[INFO] lda=%ld, ldb=%ld, ldc=%ld\n", lda, ldb, ldc);
 
   // Copy in
@@ -250,9 +250,9 @@ int main(int argc, char** argv) {
                                  src_0_addr, src_1_addr, dst_0_addr,
                                  (uint64_t)M, (uint64_t)N, (uint64_t)K,
                                  lda, ldb, ldc);
-  printf("[INFO] Kernel ret=%ld\n", kernel_ret);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to start kernel : err=%d\n", err);
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
     npu_runtime_deinit(&runtime);
     return -1;
   }

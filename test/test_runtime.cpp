@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
 
   err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 30, base, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
                                               12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29);
-  printf("ret:%ld\n", kernel_ret);
+  printf("ret:%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
     std::cerr << "Failed to start kernel: " << err << std::endl;
     npu_runtime_deinit(&runtime);
