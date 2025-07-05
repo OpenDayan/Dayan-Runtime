@@ -1,0 +1,301 @@
+#include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "NPUDriver.h"
+#include "NPURuntime.h"
+#include "npu_instruction.hpp"
+
+typedef uint16_t fp16;
+
+#define check(x, expect)                                                       \
+  if (isnan(x) || (x) != (expect)) {                                           \
+    printf("Error: %s:%d: (%d,%d) %s = %d, expected %d\n", __FILE__, __LINE__, \
+           m, n, #x, (x), (expect));                                           \
+    exit(-1);                                                                  \
+  }
+
+#define fp_check(x, expect, eps)                                               \
+  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
+    printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,     \
+           (x), (expect));                                                     \
+    exit(-1);                                                                  \
+  }
+
+#define fp_checkr(m, n, x, expect, eps)                                        \
+  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
+    printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, \
+           m, n, #x, *(int *)&(x), *(int *)&(expect));                         \
+  }
+
+#include "../npu-kernels/testdata_gen/generated/e4m3_mat_size.gen"
+
+float a[M * K] = {
+#include "../npu-kernels/testdata_gen/generated/e4m3_a_row.gen"
+}; // A[M][K]
+
+float b[K * N] = {
+#include "../npu-kernels/testdata_gen/generated/e4m3_b_row.gen"
+}; // B[K][N]
+
+float c_real[M * N] = {
+#include "../npu-kernels/testdata_gen/generated/e4m3_c_row.gen"
+}; // C[N][M]
+
+fp16 a_fp16[M * K];
+fp16 b_fp16[K * N];
+
+float c0[M * N];
+float c1[M * N];
+float c2[M * N];
+float c3[M * N];
+
+extern struct NPUDeviceKernelSetDesc __general_entry_fpga;
+
+static struct NPURuntimeState runtime;
+static struct NPUKernelDesc *kernel_desc;
+
+static uint64_t src_0_addr = 0x81000000;
+static uint64_t src_1_addr = 0x82000000;
+static uint64_t dst_0_addr = 0x83000000;
+
+/* FP16 conversion */
+static inline float __fp16_to_fp32(fp16 h) {
+ uint32_t x = ((h & 0x8000) << 16) | 
+                 (((h & 0x7c00) + 0x1c000) << 13) | 
+                 ((h & 0x03ff) << 13);
+    
+    // 处理denormal数
+    if ((h & 0x7c00) == 0) {
+        if ((h & 0x03ff) != 0) {
+            // 非零的denormal数
+            uint32_t sign = (h & 0x8000) << 16;
+            uint32_t mantissa = (h & 0x03ff);
+            int32_t exponent = -14;
+            
+            // 规范化
+            while ((mantissa & 0x0400) == 0) {
+                mantissa <<= 1;
+                exponent--;
+            }
+            
+            mantissa &= 0x03ff;
+            x = sign | ((exponent + 127) << 23) | (mantissa << 13);
+        }
+    }
+    
+    return *((float*)&x);
+}
+
+static inline fp16 __fp32_to_fp16(float f) {
+  uint32_t x = *((uint32_t*)&f);
+  uint16_t h = ((x >> 16) & 0x8000) | 
+                 ((((x & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | 
+                 ((x >> 13) & 0x03ff);
+    
+    // 处理溢出
+    if ((x & 0x7f800000) == 0x7f800000) {  // Inf/NaN
+        h = (h & 0x8000) | 0x7c00 | ((x >> 13) & 0x03ff);
+    } else if ((x & 0x7f800000) > 0x477fe000) {  // 可能溢出到Inf
+        h = (h & 0x8000) | 0x7c00;  // 转换为Inf
+    } else if ((x & 0x7f800000) < 0x38000000) {  // 可能为denormal
+        // 处理denormal数
+        uint32_t sign = x & 0x80000000;
+        uint32_t mantissa = (x & 0x007fffff) | 0x00800000;
+        int32_t exponent = ((x >> 23) & 0xff) - 127 - 14;
+        
+        if (exponent < -24) {
+            // 太小，转换为0
+            h = (uint16_t)(sign >> 16);
+        } else {
+            // Denormal FP16
+            mantissa >>= (-exponent);
+            h = (uint16_t)((sign >> 16) | (mantissa >> 13));
+        }
+    }
+    
+    return h;
+}
+
+static void trans_f32_to_fp16() {
+  for (int m = 0; m < M; m++) {
+    for (int k = 0; k < K; k++) {
+      a_fp16[m * K + k] = __fp32_to_fp16(a[m * K + k]);
+      //fp_check(__fp16_to_fp32(a_fp16[m * K + k]), a[m * K + k], 0.0f);
+    }
+  }
+  for (int k = 0; k < K; k++) {
+    for (int n = 0; n < N; n++) {
+      b_fp16[k * N + n] = __fp32_to_fp16(b[k * N + n]);
+      //fp_check(__fp16_to_fp32(b_fp16[k * N + n]), b[k * N + n], 0.0f);
+    }
+  }
+}
+
+static void testrt_npu_init() {
+  ssize_t err = 0;
+  printf("[INFO] Initializing Runtime..\n");
+  err = npu_runtime_init(&runtime);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to initialize Runtime: err=%ld\n", err);
+    exit(-1);
+  }
+  printf("[INFO] Runtime initialized successfully.\n");
+}
+
+static void testrt_npu_load_kernel_set() {
+  ssize_t err = 0;
+  err = npu_runtime_load_kernelset(&runtime, &__general_entry_fpga);
+  if (err != NPU_SUCCESS) {
+    printf("Failed to load kernel set: err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    exit(-1);
+  }
+  printf("[INFO] Kernel set loaded successfully.\n");
+}
+
+static void testrt_run_tx_init_kernel() {
+  ssize_t err = 0;
+  struct NPUKernelDesc *tx_init_kernel_desc;
+  err =
+      npu_runtime_get_kernel_desc(&runtime, "__tx_init", &tx_init_kernel_desc);
+  if (err != NPU_SUCCESS) {
+    printf("Failed to get kernel description for __tx_init: err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    exit(-1);
+  }
+  printf("[INFO] Loaded __tx_init kernel desc successfully.\n");
+  int kernel_ret;
+  printf("[INFO] Start kernel __tx_init ... \n");
+  err = npu_runtime_kernel_start(&runtime, tx_init_kernel_desc, &kernel_ret, 0);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    exit(-1);
+  }
+  printf("[INFO] Kernel __tx_init run successfully.\n");
+}
+
+static void testrt_npu_get_kernel_desc(const char *kernel_name) {
+  ssize_t err = 0;
+  err = npu_runtime_get_kernel_desc(&runtime, kernel_name, &kernel_desc);
+  if (err != NPU_SUCCESS) {
+    printf("Failed to get kernel description for '%s': err=%ld\n", kernel_name,
+           err);
+    npu_runtime_deinit(&runtime);
+    exit(-1);
+  }
+  printf("[INFO] Loaded '%s' kernel desc successfully.\n", kernel_name);
+}
+
+void check_result(float *c) {
+  printf("[INFO] Check result ...\n");
+  for (int m = 0; m < M; m++) {
+    for (int n = 0; n < N; n++) {
+      fp_checkr(m, n, c[m * N + n], c_real[m * N + n], 0.1f);
+    }
+  }
+  printf("[INFO] Result check successfully!\n");
+}
+
+static void testrt_npu_memcpy_in(void *input0, void *input1, void *output) {
+  printf("[INFO] Copy data to device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)input0,
+                          M * K * sizeof(fp16));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n",
+           src_0_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         M * K * sizeof(fp16), src_0_addr);
+
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)input1,
+                          K * N * sizeof(fp16));
+  if (ret < 0)
+    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n",
+           src_1_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n",
+         K * N * sizeof(fp16), src_1_addr);
+
+  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)output,
+                          M * N * sizeof(float));
+  if (ret < 0)
+    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n",
+         M * N * sizeof(float), dst_0_addr);
+}
+
+static void testrt_npu_memcpy_out(void *output) {
+  printf("[INFO] Copy data from device ... \n");
+  size_t ret = 0;
+  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)output, dst_0_addr,
+                            M * N * sizeof(int32_t));
+  if (ret < 0)
+    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n",
+         M * N * sizeof(int32_t), dst_0_addr);
+}
+
+int run_kenrel(const char *kernel_name, void *input0, void *input1,
+               void *output) {
+  // Get kernel
+  testrt_npu_get_kernel_desc(kernel_name);
+
+  printf("[INFO] M=%d, N=%d\n", M, N);
+
+  // Copy in
+  testrt_npu_memcpy_in(input0, input1, output);
+
+  int kernel_ret;
+  ssize_t err = 0;
+  printf("[INFO] Start kernel %s ... \n", kernel_name);
+  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 6,
+                                 src_0_addr, src_1_addr, dst_0_addr, M, N, K);
+  printf("[INFO] Kernel ret=%d\n", kernel_ret);
+  if (err != NPU_SUCCESS) {
+    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    npu_runtime_deinit(&runtime);
+    return -1;
+  }
+  printf("[INFO] Kernel %s run successfully.\n", kernel_name);
+
+  // Copy out
+  testrt_npu_memcpy_out(output);
+  return 0;
+}
+
+int main(int argc, char **argv) {
+
+  trans_f32_to_fp16();
+
+  testrt_npu_init();
+  testrt_npu_load_kernel_set();
+  testrt_run_tx_init_kernel();
+
+  run_kenrel("matmul_fp16_fp16_fp32_row_row", a_fp16, b_fp16, c0);
+  check_result(c0);
+
+  // run_kenrel("matmul_fp16_fp16_fp32_row_col", a_fp16, b_fp16, c1);
+  // check_result(c1);
+
+  // run_kenrel("matmul_fp16_fp16_fp32_col_row", a_fp16, b_fp16, c2);
+  // check_result(c2);
+
+  // run_kenrel("matmul_fp16_fp16_fp32_col_col", a_fp16, b_fp16, c3);
+  // check_result(c3);
+
+  // End
+  npu_runtime_deinit(&runtime);
+
+  // Check result
+  
+
+  return 0;
+}
