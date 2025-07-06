@@ -32,6 +32,7 @@ typedef uint16_t fp16;
            m, n, #x, *(int *)&(x), *(int *)&(expect));                         \
   }
 
+
 #include "../npu-kernels/testdata_gen/generated/e4m3_mat_size.gen"
 
 float a[M * K] = {
@@ -68,16 +69,12 @@ static inline float __fp16_to_fp32(fp16 h) {
  uint32_t x = ((h & 0x8000) << 16) | 
                  (((h & 0x7c00) + 0x1c000) << 13) | 
                  ((h & 0x03ff) << 13);
-    
-    // 处理denormal数
     if ((h & 0x7c00) == 0) {
         if ((h & 0x03ff) != 0) {
-            // 非零的denormal数
             uint32_t sign = (h & 0x8000) << 16;
             uint32_t mantissa = (h & 0x03ff);
             int32_t exponent = -14;
-            
-            // 规范化
+
             while ((mantissa & 0x0400) == 0) {
                 mantissa <<= 1;
                 exponent--;
@@ -96,28 +93,23 @@ static inline fp16 __fp32_to_fp16(float f) {
   uint16_t h = ((x >> 16) & 0x8000) | 
                  ((((x & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | 
                  ((x >> 13) & 0x03ff);
-    
-    // 处理溢出
-    if ((x & 0x7f800000) == 0x7f800000) {  // Inf/NaN
+
+    if ((x & 0x7f800000) == 0x7f800000) {
         h = (h & 0x8000) | 0x7c00 | ((x >> 13) & 0x03ff);
-    } else if ((x & 0x7f800000) > 0x477fe000) {  // 可能溢出到Inf
-        h = (h & 0x8000) | 0x7c00;  // 转换为Inf
-    } else if ((x & 0x7f800000) < 0x38000000) {  // 可能为denormal
-        // 处理denormal数
+    } else if ((x & 0x7f800000) > 0x477fe000) {
+        h = (h & 0x8000) | 0x7c00;
+    } else if ((x & 0x7f800000) < 0x38000000) {
         uint32_t sign = x & 0x80000000;
         uint32_t mantissa = (x & 0x007fffff) | 0x00800000;
         int32_t exponent = ((x >> 23) & 0xff) - 127 - 14;
         
         if (exponent < -24) {
-            // 太小，转换为0
             h = (uint16_t)(sign >> 16);
         } else {
-            // Denormal FP16
             mantissa >>= (-exponent);
             h = (uint16_t)((sign >> 16) | (mantissa >> 13));
         }
     }
-    
     return h;
 }
 
@@ -125,13 +117,13 @@ static void trans_f32_to_fp16() {
   for (int m = 0; m < M; m++) {
     for (int k = 0; k < K; k++) {
       a_fp16[m * K + k] = __fp32_to_fp16(a[m * K + k]);
-      //fp_check(__fp16_to_fp32(a_fp16[m * K + k]), a[m * K + k], 0.0f);
+      fp_check(__fp16_to_fp32(a_fp16[m * K + k]), a[m * K + k], 0.1f);
     }
   }
   for (int k = 0; k < K; k++) {
     for (int n = 0; n < N; n++) {
       b_fp16[k * N + n] = __fp32_to_fp16(b[k * N + n]);
-      //fp_check(__fp16_to_fp32(b_fp16[k * N + n]), b[k * N + n], 0.0f);
+      fp_check(__fp16_to_fp32(b_fp16[k * N + n]), b[k * N + n], 0.1f);
     }
   }
 }
@@ -197,7 +189,7 @@ void check_result(float *c) {
   printf("[INFO] Check result ...\n");
   for (int m = 0; m < M; m++) {
     for (int n = 0; n < N; n++) {
-      fp_checkr(m, n, c[m * N + n], c_real[m * N + n], 0.1f);
+      fp_check(c[m * N + n], c_real[m * N + n], 0.1f);
     }
   }
   printf("[INFO] Result check successfully!\n");
