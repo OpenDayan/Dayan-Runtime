@@ -34,6 +34,10 @@ int32_t a_floor_real[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/convert_a_floor_row.gen"
 };
 
+float a_floor_to_fp32[M * N] = {
+  #include "../npu-kernels/testdata_gen/generated/convert_a_floor_to_fp32_row.gen"
+};
+
 int32_t a_ceil_real[M * N] = {
 #include "../npu-kernels/testdata_gen/generated/convert_a_ceil_row.gen"
 };
@@ -58,6 +62,8 @@ int32_t c[M * N] = {0};
 int8_t c_e4m3[M * N] = {0};
 int16_t c_fp16[M * N] = {0};
 int16_t c_bf16[M * N] = {0};
+
+float d[M * N] = {0};
 
 extern struct NPUDeviceKernelSetDesc __general_entry_fpga;
 
@@ -293,6 +299,10 @@ int main(int argc, char **argv) {
 
   run_kernel("tx_convert_fp32_s32_floor", a_fp32_in, c, dims, strides, 4, 4);
   check_result(c, a_floor_real, CONVERT_U32);
+  
+  run_kernel("tx_convert_s32_fp32", a_floor_real, d, dims, strides, 4, 4);
+  check_result(d, a_floor_to_fp32, CONVERT_U32);
+
 
   run_kernel("tx_convert_fp32_s32_ceil", a_fp32_in, c, dims, strides, 4, 4);
   check_result(c, a_ceil_real, CONVERT_U32);
