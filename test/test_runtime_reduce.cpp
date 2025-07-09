@@ -30,8 +30,26 @@
 
 float c_fp32[N * 1] = {0};
 
+int c_s32[N * 1] = {0};
+
 float a_fp32_in[N * M] = {
 #include "../npu-kernels/testdata_gen/generated/elementwise_float_a_row.gen"
+};
+
+int a_s32_in[N * M] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_a_row.gen"
+};
+
+float c_s32_max_real[N * 1] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_max_row.gen"
+};
+
+float c_s32_min_real[N * 1] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_min_row.gen"
+};
+
+float c_s32_sum_real[N * 1] = {
+#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sum_row.gen"
 };
 
 float c_fp32_max_real[N * 1] = {
@@ -152,6 +170,15 @@ void check_fp32_result(float *output_real) {
   printf("[INFO] Result check successfully!\n");
 }
 
+void check_s32_result(float *output_real) {
+  printf("[INFO] Check result ...\n");
+  for (int n = 0; n < N; n++) {
+    fp_check(c_s32[n], output_real[n], 0);
+  }
+  printf("[INFO] Result check successfully!\n");
+}
+
+
 int run_kenrel(const char *kernel_name, void *input0, 
                void *output, int axis) {
   // Get kernel
@@ -194,6 +221,15 @@ int main(int argc, char **argv) {
 
   run_kenrel("tx_fp_reduce_add_fp32", a_fp32_in, c_fp32, 1);
   check_fp32_result(c_fp32_sum_real);
+
+  run_kenrel("tx_int_reduce_max_s32", a_s32_in, c_s32, 1);
+  check_s32_result(c_s32_max_real);
+
+  run_kenrel("tx_int_reduce_min_s32", a_s32_in, c_s32, 1);
+  check_s32_result(c_s32_min_real);
+
+  run_kenrel("tx_int_reduce_add_s32", a_s32_in, c_s32, 1);
+  check_s32_result(c_s32_sum_real);
 
   // End
   npu_runtime_deinit(&runtime);
