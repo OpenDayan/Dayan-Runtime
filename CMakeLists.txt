@@ -12,6 +12,7 @@ add_executable(npu-test_matmul_e4m3_e4m3_fp32 ${SOURCE} test/test_runtime_matmul
 add_executable(npu-test_elementwise ${SOURCE} test/test_runtime_elementwise.cpp test/general_entry_fpga.packed.c)
 add_executable(npu-test_reduce ${SOURCE} test/test_runtime_reduce.cpp test/general_entry_fpga.packed.c)
 add_executable(npu-test_convert ${SOURCE} test/test_runtime_convert.cpp test/general_entry_fpga.packed.c)
+add_executable(npu-test_lut ${SOURCE} test/test_runtime_lut.cpp test/general_entry_fpga.packed.c)
 
 include_directories(include)
 include_directories(npu-kernels/testdata_gen)
