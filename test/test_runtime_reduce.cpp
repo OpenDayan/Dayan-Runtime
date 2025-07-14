@@ -26,42 +26,42 @@
            m, n, #x, *(int *)&(x), *(int *)&(expect));                         \
   }
 
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_size.gen"
+#include "generated/elementwise_int_size.gen"
 
 float c_fp32[N * 1] = {0};
 
 int c_s32[N * 1] = {0};
 
 float a_fp32_in[N * M] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_a_row.gen"
+#include "generated/elementwise_float_a_row.gen"
 };
 
 int a_s32_in[N * M] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_a_row.gen"
+#include "generated/elementwise_int_a_row.gen"
 };
 
 float c_s32_max_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_max_row.gen"
+#include "generated/elementwise_int_c_max_row.gen"
 };
 
 float c_s32_min_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_min_row.gen"
+#include "generated/elementwise_int_c_min_row.gen"
 };
 
 float c_s32_sum_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sum_row.gen"
+#include "generated/elementwise_int_c_sum_row.gen"
 };
 
 float c_fp32_max_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_max_row.gen"
+#include "generated/elementwise_float_c_max_row.gen"
 };
 
 float c_fp32_min_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_min_row.gen"
+#include "generated/elementwise_float_c_min_row.gen"
 };
 
 float c_fp32_sum_real[N * 1] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_sum_row.gen"
+#include "generated/elementwise_float_c_sum_row.gen"
 };
 
 extern struct NPUDeviceKernelSetDesc __general_entry_fpga;

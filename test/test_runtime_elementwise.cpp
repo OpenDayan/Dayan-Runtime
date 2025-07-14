@@ -29,110 +29,110 @@
 #define OR 14
 #define XOR 6
 
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_size.gen"
+#include "generated/elementwise_int_size.gen"
 
 int32_t a_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_a_row.gen"
+#include "generated/elementwise_int_a_row.gen"
 };
 
 int32_t b_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_b_row.gen"
+#include "generated/elementwise_int_b_row.gen"
 };
 
 int32_t shift_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_shift_row.gen"
+#include "generated/elementwise_int_shift_row.gen"
 };
 
 int32_t c_add_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_add_row.gen"
+#include "generated/elementwise_int_c_add_row.gen"
 };
 
 int32_t c_sub_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sub_row.gen"
+#include "generated/elementwise_int_c_sub_row.gen"
 };
 
 int32_t c_mul_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_mul_row.gen"
+#include "generated/elementwise_int_c_mul_row.gen"
 };
 
 int32_t c_srl_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_srl_row.gen"
+#include "generated/elementwise_int_c_srl_row.gen"
 };
 
 int32_t c_sra_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sra_row.gen"
+#include "generated/elementwise_int_c_sra_row.gen"
 };
 
 int32_t c_sll_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_sll_row.gen"
+#include "generated/elementwise_int_c_sll_row.gen"
 };
 
 int32_t c_and_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_and_row.gen"
+#include "generated/elementwise_int_c_and_row.gen"
 };
 
 int32_t c_or_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_or_row.gen"
+#include "generated/elementwise_int_c_or_row.gen"
 };
 
 int32_t c_xor_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_int_c_xor_row.gen"
+#include "generated/elementwise_int_c_xor_row.gen"
 };
 
 float a_fp32_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_a_row.gen"
+#include "generated/elementwise_float_a_row.gen"
 };
 
 float b_fp32_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_b_row.gen"
+#include "generated/elementwise_float_b_row.gen"
 };
 
 float c_fp32_add_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_add_row.gen"
+#include "generated/elementwise_float_c_add_row.gen"
 };
 
 float c_fp32_sub_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_sub_row.gen"
+#include "generated/elementwise_float_c_sub_row.gen"
 };
 
 float c_fp32_mul_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/elementwise_float_c_mul_row.gen"
+#include "generated/elementwise_float_c_mul_row.gen"
 };
 
 // broadcast
 int32_t b_row[1 * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_b_row.gen"
+#include "generated/broadcast_b_row.gen"
 };
 int32_t b_col[M * 1] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_b_col.gen"
+#include "generated/broadcast_b_col.gen"
 };
 
 int32_t scalar[1] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_scalar.gen"
+#include "generated/broadcast_scalar.gen"
 };
 
 int32_t c_add_row_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_add_row_bcast.gen"
+#include "generated/broadcast_c_add_row_bcast.gen"
 };
 
 int32_t c_mul_row_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_mul_row_bcast.gen"
+#include "generated/broadcast_c_mul_row_bcast.gen"
 };
 
 int32_t c_sub_col_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_sub_col_bcast.gen"
+#include "generated/broadcast_c_sub_col_bcast.gen"
 };
 
 int32_t c_or_col_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_or_col_bcast.gen"
+#include "generated/broadcast_c_or_col_bcast.gen"
 };
 
 int32_t c_mul_scalar_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_mul_scalar_bcast.gen"
+#include "generated/broadcast_c_mul_scalar_bcast.gen"
 };
 
 int32_t c_xor_scalar_bcast_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/broadcast_c_xor_scalar_bcast.gen"
+#include "generated/broadcast_c_xor_scalar_bcast.gen"
 };
 
 int32_t c[M * N] = {0};

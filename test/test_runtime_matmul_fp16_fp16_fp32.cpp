@@ -33,18 +33,18 @@ typedef uint16_t fp16;
   }
 
 
-#include "../npu-kernels/testdata_gen/generated/e4m3_mat_size.gen"
+#include "generated/e4m3_mat_size.gen"
 
 float a[M * K] = {
-#include "../npu-kernels/testdata_gen/generated/e4m3_a_row.gen"
+#include "generated/e4m3_a_row.gen"
 }; // A[M][K]
 
 float b[K * N] = {
-#include "../npu-kernels/testdata_gen/generated/e4m3_b_row.gen"
+#include "generated/e4m3_b_row.gen"
 }; // B[K][N]
 
 float c_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/e4m3_c_row.gen"
+#include "generated/e4m3_c_row.gen"
 }; // C[N][M]
 
 fp16 a_fp16[M * K];

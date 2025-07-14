@@ -24,38 +24,38 @@
     exit(-1);                                                                  \
   }
 
-#include "../npu-kernels/testdata_gen/generated/convert_size.gen"
+#include "generated/convert_size.gen"
 
 float a_fp32_in[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_float_a_row.gen"
+#include "generated/convert_float_a_row.gen"
 };
 
 int32_t a_floor_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_floor_row.gen"
+#include "generated/convert_a_floor_row.gen"
 };
 
 float a_floor_to_fp32[M * N] = {
-  #include "../npu-kernels/testdata_gen/generated/convert_a_floor_to_fp32_row.gen"
+  #include "generated/convert_a_floor_to_fp32_row.gen"
 };
 
 int32_t a_ceil_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_ceil_row.gen"
+#include "generated/convert_a_ceil_row.gen"
 };
 
 int32_t a_round_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_round_row.gen"
+#include "generated/convert_a_round_row.gen"
 };
 
 uint8_t a_e4m3_round_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_fp8_e4m3_round_row.gen"
+#include "generated/convert_a_fp8_e4m3_round_row.gen"
 };
 
 uint16_t a_fp16_round_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_fp16_round_row.gen"
+#include "generated/convert_a_fp16_round_row.gen"
 };
 
 uint16_t a_bf16_round_real[M * N] = {
-#include "../npu-kernels/testdata_gen/generated/convert_a_bf16_round_row.gen"
+#include "generated/convert_a_bf16_round_row.gen"
 };
 
 int32_t c[M * N] = {0};
