@@ -119,7 +119,7 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
       for(long i = 0 ; i < general_entry_args.putchar_wptr ; i ++) {
         putchar(printbuf[i]);
       }
-      printf("Exit using %ldus printbuf %d\n",t0 * 100, general_entry_args.putchar_wptr);
+      // printf("Exit using %ldus printbuf %d\n",t0 * 100, general_entry_args.putchar_wptr);
       return NPU_SUCCESS;
     }
     t0++;
