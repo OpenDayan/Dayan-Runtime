@@ -150,6 +150,9 @@ FUNC_NPU_MMIO_WRITE(uint32_t, 32)
 FUNC_NPU_MMIO_WRITE(uint16_t, 16)
 FUNC_NPU_MMIO_WRITE(uint8_t, 8)
 
+static char __attribute__ ((aligned (65536))) __npu_memcpy_buffer[65536];
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
 ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
                           void *src, size_t size) {
   if (device == NULL) {
@@ -177,7 +180,8 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
 
   uint64_t wsize = 0;
   while(wsize != size) {
-    ret = write(device->xdma_h2c_fd, src + wsize, size - wsize);
+    memcpy(__npu_memcpy_buffer, src + wsize, MIN(65536, size - wsize));
+    ret = write(device->xdma_h2c_fd, __npu_memcpy_buffer, MIN(65536, size - wsize));
     if (ret < 0) {
       return -NPU_DEVICE_ERRNO_IO;
     }
@@ -214,7 +218,8 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
 
   uint64_t rsize = 0;
   while(rsize != size) {
-    ret = read(device->xdma_c2h_fd, dst + rsize, size - rsize);
+    ret = read(device->xdma_c2h_fd, __npu_memcpy_buffer, MIN(65536, size - rsize));
+    memcpy(dst + rsize, __npu_memcpy_buffer, MIN(65536, size - rsize));
     if (ret < 0) {
       return -NPU_DEVICE_ERRNO_IO;
     }
