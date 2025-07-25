@@ -28,6 +28,7 @@ struct NPUDeviceKernelSetDesc {
 
   uint8_t *data;                 // Pointer to the binary
   struct NPUKernelDesc *kernels; // Pointer to an array of kernel descriptions
+  uint64_t heap;                 // Pointer to the start address of heap
 };
 
 // Device Runtime Stateful Structure
@@ -35,6 +36,9 @@ struct NPURuntimeState {
   // TODO
   struct NPUDeviceState dev_state;
   struct NPUDeviceKernelSetDesc kernel_set_desc;
+  
+  // Memory Management Context
+  void *mm;
 };
 
 struct GeneralEntryArgs {
@@ -75,16 +79,19 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     int* kernel_ret, size_t arg_count, ...);
 
 // Device Memory Management
+ssize_t npu_mm_init(void** mm, uint64_t heap_start, uint64_t heap_end);
+ssize_t npu_mm_deinit(void** mm);
 ssize_t npu_runtime_malloc(const struct NPURuntimeState *runtime,
-                                     void **dev_ptr, size_t size);
+                                     uint64_t* dev_ptr, size_t size);
 ssize_t npu_runtime_free(const struct NPURuntimeState *runtime,
-                                   void *dev_ptr);
+                                     uint64_t  dev_ptr);
 ssize_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
-                                      size_t size, uint64_t start_address);
+                                     uint64_t  dev_ptr, size_t size);
 ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   const char *kernel_name,
   struct NPUKernelDesc **kernel_desc_out);
-
+ssize_t npu_runtime_memset(const struct NPURuntimeState *runtime,
+                                     uint64_t  dev_ptr, int c, size_t n);
 #ifdef __cplusplus
 }
 #endif

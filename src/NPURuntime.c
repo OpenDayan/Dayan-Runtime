@@ -23,10 +23,17 @@ ssize_t npu_runtime_init(struct NPURuntimeState *runtime) {
     return NPU_ERROR_DEVICE_FAILURE;
   }
 
+  runtime->mm = NULL;
+
   return NPU_SUCCESS;
 }
 
-void npu_runtime_deinit(struct NPURuntimeState *runtime) {}
+void npu_runtime_deinit(struct NPURuntimeState *runtime) {
+  npu_device_deinit(&runtime->dev_state);
+  if(runtime->mm) {
+    npu_mm_deinit(&runtime->mm);
+  }
+}
 
 ssize_t npu_runtime_load_kernelset(
     struct NPURuntimeState *runtime,
@@ -52,6 +59,8 @@ ssize_t npu_runtime_load_kernelset(
   if (ret < 0) {
     return NPU_ERROR_DEVICE_FAILURE;
   }
+
+  ret = npu_mm_init(&runtime->mm, kernel_set_desc->heap, 0x180000000ul);
 
   return NPU_SUCCESS;
 }
@@ -125,22 +134,7 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     t0++;
     usleep(100); // 0.1ms
   }
-}
-
-// Device Memory Management
-ssize_t npu_runtime_malloc(const struct NPURuntimeState *runtime,
-                                     void **dev_ptr, size_t size) {
-  return NPU_SUCCESS;
-}
-
-ssize_t npu_runtime_free(const struct NPURuntimeState *runtime,
-                                   void *dev_ptr) {
-  return NPU_SUCCESS;
-}
-
-ssize_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
-                                      size_t size, uint64_t start_address) {
-  return NPU_SUCCESS;
+  return ret;
 }
 
 ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,

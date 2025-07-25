@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(npu-driver LANGUAGES C CXX)
-set(SOURCE src/NPUDriver.c src/NPURuntime.c)
+set(SOURCE src/NPUDriver.c src/NPURuntime.c src/NPUMemoryManagement.cpp)
 
 add_executable(npu-test_driver ${SOURCE} test/test_driver.cpp)
 add_executable(npu-test_runtime ${SOURCE} test/test_runtime.cpp ../npu-kernels/general_entry_fpga.packed.c)
