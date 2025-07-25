@@ -154,6 +154,17 @@ ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   return NPU_ERROR_KERNEL_NOT_FOUND;
 }
 
+ssize_t npu_runtime_memset(const struct NPURuntimeState *runtime, uint64_t  dev_ptr, int c, size_t n) {
+  static struct NPUKernelDesc *memset_desc = NULL;
+  ssize_t ret;
+  if(!memset_desc) {
+    ret = npu_runtime_get_kernel_desc(runtime, "kernel_memset", &memset_desc);
+    if(ret < 0) return ret;
+  }
+  npu_runtime_kernel_start(runtime, memset_desc, (int*)&ret, 3, dev_ptr, (uint64_t) c, n);
+  return ret;
+}
+
 #ifdef __cplusplus
 }
 #endif

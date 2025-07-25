@@ -29,6 +29,7 @@ struct NPUDeviceKernelSetDesc {
   uint8_t *data;                 // Pointer to the binary
   struct NPUKernelDesc *kernels; // Pointer to an array of kernel descriptions
   uint64_t heap;                 // Pointer to the start address of heap
+  uint64_t perf;                 // Pointer to the start address of perf counter
 };
 
 // Device Runtime Stateful Structure
