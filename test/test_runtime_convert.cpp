@@ -18,11 +18,15 @@
   }
 
 #define fp_check(x, expect, eps)                                               \
-  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
-    printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,     \
-           (x), (expect));                                                     \
-    exit(-1);                                                                  \
-  }
+  do {                                                                         \
+    float _x = (x);                                                            \
+    float _expect = (float)(expect);                                           \
+    if (isnan(_x) || (_x) < (_expect) - (eps) || (_x) > (_expect) + (eps)) {   \
+      printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,   \
+             _x, _expect);                                                     \
+      exit(-1);                                                                \
+    }                                                                          \
+  } while (0)
 
 #include "generated/convert_size.gen"
 
@@ -179,7 +183,7 @@ static void testrt_npu_memcpy_out(void *output, uint32_t output_type_size) {
   if (ret < 0)
     printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n",
            dst_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n",
+  printf("[INFO] Copied dst0(%d Bytes) from device at 0x%lx\n",
          M * N * output_type_size, dst_addr);
 }
 

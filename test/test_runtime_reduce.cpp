@@ -13,12 +13,15 @@
 
 
 #define fp_check(x, expect, eps)                                               \
-  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
-    printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,     \
-           (x), (expect));                                                     \
-  }
-           //exit(-1);                                                                  \
-  }
+  do {                                                                         \
+    float _x = (x);                                                            \
+    float _expect = (float)(expect);                                           \
+    if (isnan(_x) || (_x) < (_expect) - (eps) || (_x) > (_expect) + (eps)) {   \
+      printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,   \
+             _x, _expect);                                                     \
+      exit(-1);                                                                \
+    }                                                                          \
+  } while (0)
 
 #define fp_checkr(m, n, x, expect, eps)                                        \
   if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
