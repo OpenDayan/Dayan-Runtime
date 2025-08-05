@@ -155,7 +155,7 @@ static char __attribute__ ((aligned (65536))) __npu_memcpy_buffer[65536];
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
-                          void *src, size_t size) {
+                          const void *src, size_t size) {
   if (device == NULL) {
     return -NPU_DEVICE_ERRNO_INVALID_ARGS;
   }

@@ -45,7 +45,7 @@ extern "C"
                           uint8_t value);
 
   ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
-                            void *src, size_t size);
+                              const void *src, size_t size);
   ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
                               uint64_t src, size_t size);
 
