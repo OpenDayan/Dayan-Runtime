@@ -20,11 +20,13 @@ class NPUMemoryManagement {
 private:
     AVL::tree<NPUMemoryBlock> fm;
     AVL::tree<NPUMemoryBlock> um;
+    size_t total_mem;
     size_t free_mem;
 public:
     NPUMemoryManagement(uint64_t heap_start, uint64_t heap_end) {
         fm.insert(NPUMemoryBlock(heap_start, heap_end - heap_start));
-        free_mem = heap_end - heap_start;
+        total_mem = heap_end - heap_start;
+        free_mem  = total_mem;
     }
     void dump(std::ostream& os) {
         for(auto it : fm) {
@@ -43,6 +45,7 @@ public:
                     fm.insert(NPUMemoryBlock(iter.start + size, iter.size - size));
                 }
                 um.insert(NPUMemoryBlock(iter.start, size));
+                free_mem -= size;
                 return true;
             }
         }
@@ -54,6 +57,7 @@ public:
             return false;
         }
         NPUMemoryBlock b = *it;
+        free_mem += b.size;
         um.remove(b);
         fm.insert(b);
         it = fm.find(b);
@@ -70,6 +74,12 @@ public:
             fm.remove(*right_it);
         }
         return true;
+    }
+    ssize_t get_freemem() {
+        return (ssize_t) free_mem;
+    }
+    ssize_t get_totalmem() {
+        return (ssize_t) total_mem;
     }
 };
 extern "C" {
@@ -94,6 +104,17 @@ extern "C" {
         auto mm = (NPUMemoryManagement*)runtime->mm;
         bool success = mm->dealloc(dev_ptr);
         return success ? NPU_SUCCESS : -NPU_DEVICE_ERRNO_INVALID_ARGS;
+    }
+
+    ssize_t npu_runtime_get_meminfo(const struct NPURuntimeState *runtime,
+        size_t * free, size_t * total) {
+        auto mm = (NPUMemoryManagement*)runtime->mm;
+        if(!mm) {
+            return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+        }
+        *free = mm->get_freemem();
+        *total = mm->get_totalmem();
+        return NPU_SUCCESS;
     }
 
     // Hidden debug function

@@ -88,14 +88,31 @@ ssize_t npu_runtime_free(const struct NPURuntimeState *runtime,
                                      uint64_t  dev_ptr);
 ssize_t npu_runtime_reserve(const struct NPURuntimeState *runtime,
                                      uint64_t  dev_ptr, size_t size);
+ssize_t npu_runtime_get_meminfo(const struct NPURuntimeState *runtime,
+        size_t * free, size_t * total);
 ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   const char *kernel_name,
   struct NPUKernelDesc **kernel_desc_out);
 ssize_t npu_runtime_memset(const struct NPURuntimeState *runtime,
                                      uint64_t  dev_ptr, int c, size_t n);
 
-__attribute__((always_inline)) static inline uint32_t float_as_u32(float i) { return *(uint32_t*)&i; }
-__attribute__((always_inline)) static inline float u32_as_float(uint32_t i) { return *(float*)&i; }
+__attribute__((always_inline)) static inline uint32_t float_as_u32(float i) {
+  union {
+    float f;
+    uint32_t i;
+  } t;
+  t.f = i;
+  return t.i;
+}
+
+__attribute__((always_inline)) static inline float u32_as_float(uint32_t i) {
+  union {
+    float f;
+    uint32_t i;
+  } t;
+  t.i = i;
+  return t.f;
+}
 
 #ifdef __cplusplus
 }
