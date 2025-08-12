@@ -93,6 +93,10 @@ ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   struct NPUKernelDesc **kernel_desc_out);
 ssize_t npu_runtime_memset(const struct NPURuntimeState *runtime,
                                      uint64_t  dev_ptr, int c, size_t n);
+
+__attribute__((always_inline)) static inline uint32_t float_as_u32(float i) { return *(uint32_t*)&i; }
+__attribute__((always_inline)) static inline float u32_as_float(uint32_t i) { return *(float*)&i; }
+
 #ifdef __cplusplus
 }
 #endif
