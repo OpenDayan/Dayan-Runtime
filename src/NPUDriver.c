@@ -10,8 +10,13 @@
 
 #include "NPUDriver.h"
 
+#if 1
 #define H2C_DEV "/tmp/virtual_npu/xdma0_h2c_0"
 #define C2H_DEV "/tmp/virtual_npu/xdma0_c2h_0"
+#else
+#define H2C_DEV "/dev/xdma0_h2c_0"
+#define C2H_DEV "/dev/xdma0_c2h_0"
+#endif
 
 #define MMIO_ADDR_BOOT_ADDR_REG 0x1000
 #define MMIO_ADDR_TILE_RESET_CTRL 0x110000
@@ -174,13 +179,12 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
 
   ssize_t ret;
 
-  ret = lseek(device->xdma_h2c_fd, dst, SEEK_SET);
-  if (ret < 0) {
-    return -NPU_DEVICE_ERRNO_IO;
-  }
-
   uint64_t wsize = 0;
   while(wsize != size) {
+    ret = lseek(device->xdma_h2c_fd, dst + wsize, SEEK_SET);
+    if (ret < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
     memcpy(__npu_memcpy_buffer, src + wsize, MIN(65536, size - wsize));
     ret = write(device->xdma_h2c_fd, __npu_memcpy_buffer, MIN(65536, size - wsize));
     if (ret < 0) {
@@ -212,13 +216,12 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
 
   ssize_t ret;
 
-  ret = lseek(device->xdma_c2h_fd, src, SEEK_SET);
-  if (ret < 0) {
-    return -NPU_DEVICE_ERRNO_IO;
-  }
-
   uint64_t rsize = 0;
   while(rsize != size) {
+    ret = lseek(device->xdma_c2h_fd, src + rsize, SEEK_SET);
+    if (ret < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
     ret = read(device->xdma_c2h_fd, __npu_memcpy_buffer, MIN(65536, size - rsize));
     memcpy(dst + rsize, __npu_memcpy_buffer, MIN(65536, size - rsize));
     if (ret < 0) {
