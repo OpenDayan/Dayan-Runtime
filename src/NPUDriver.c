@@ -10,12 +10,12 @@
 
 #include "NPUDriver.h"
 
-#if 1
-#define H2C_DEV "/tmp/virtual_npu/xdma0_h2c_0"
-#define C2H_DEV "/tmp/virtual_npu/xdma0_c2h_0"
-#else
+#ifdef USE_FPGA
 #define H2C_DEV "/dev/xdma0_h2c_0"
 #define C2H_DEV "/dev/xdma0_c2h_0"
+#else
+#define H2C_DEV "/tmp/virtual_npu/xdma0_h2c_0"
+#define C2H_DEV "/tmp/virtual_npu/xdma0_c2h_0"
 #endif
 
 #define MMIO_ADDR_BOOT_ADDR_REG 0x1000
