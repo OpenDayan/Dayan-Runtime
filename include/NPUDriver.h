@@ -105,4 +105,20 @@ static inline void test_dump_mem(const struct NPUDeviceState *device, uint64_t a
   free(buf);
 }
 
+static inline void test_dump_host_mem(uint8_t *buf,
+                                 size_t size)
+{
+  for (size_t i = 0; i < size; i++)
+  {
+    if (i % 16 == 0)
+    {
+      printf("\n");
+      printf("%04lx | ", (uintptr_t)buf + i);
+    }
+    printf("%02x ", buf[i]);
+  }
+  printf("\n\n");
+
+}
+
 #endif

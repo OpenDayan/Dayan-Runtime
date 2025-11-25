@@ -3,11 +3,10 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <math.h>
 
 #include "NPUDriver.h"
 #include "NPURuntime.h"
@@ -34,18 +33,18 @@
     exit(-1);                                                                  \
   }
 
-#define fp_check(x, expect, eps)                                                               \
-    if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                      \
-    {                                                                                          \
-        printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x, (x), (expect)); \
-        exit(-1);                                                                             \
-    }
+#define fp_check(x, expect, eps)                                               \
+  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
+    printf("Error: %s:%d: %s = %f, expected %f\n", __FILE__, __LINE__, #x,     \
+           (x), (expect));                                                     \
+    exit(-1);                                                                  \
+  }
 
-#define fp_checkr(m, n, x, expect, eps)                                                                      \
-    if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                                    \
-    {                                                                                                        \
-        printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, m, n, #x, *(int*)&(x), *(int*)&(expect)); \
-    }
+#define fp_checkr(m, n, x, expect, eps)                                        \
+  if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps)) {          \
+    printf("Error: %s:%d: (%d,%d) %s = %x, expected %x\n", __FILE__, __LINE__, \
+           m, n, #x, *(int *)&(x), *(int *)&(expect));                         \
+  }
 
 #include "generated/e4m3q_mat_size.gen"
 
@@ -73,10 +72,9 @@ float bs_in[N * K / QK] = {
 #endif
 // C mem
 
-struct blk_e4m3q
-{
-    float scale;
-    uint8_t v[QK];
+struct blk_e4m3q {
+  float scale;
+  uint8_t v[QK];
 };
 
 struct blk_e4m3q a[M * K / QK];
@@ -94,34 +92,26 @@ float c_real[N * M] = {
 #include "generated/e4m3q_c_col.gen"
 }; // C[N][M]
 
-uint8_t __f32_to_e4m3(float f)
-{
-    return RVT_EMU_FP8::from_float<4>(f);
-}
+uint8_t __f32_to_e4m3(float f) { return RVT_EMU_FP8::from_float<4>(f); }
 
-float __e4m3_to_f32(uint8_t e4m3)
-{
-    RVT_EMU_FP8::FP8<4> data;
-    data.bits = e4m3;
-    return RVT_EMU_FP8::to_float(data);
+float __e4m3_to_f32(uint8_t e4m3) {
+  RVT_EMU_FP8::FP8<4> data;
+  data.bits = e4m3;
+  return RVT_EMU_FP8::to_float(data);
 }
 
 extern struct NPUDeviceKernelSetDesc __general_entry_fpga;
 
 void trans_f32_to_e4m3() {
-  for (int m = 0; m < M; m++)
-  {
-      for (int n = 0; n < N; n++)
-      {
-          c[m * N + n] = 0.0;
-      }
+  for (int m = 0; m < M; m++) {
+    for (int n = 0; n < N; n++) {
+      c[m * N + n] = 0.0;
+    }
   }
-  for (int m = 0; m < M; m++)
-  {
-      for (int k = 0; k < (K / QK); k++)
-      {
-          a[m * K / QK + k].scale = as_in[m * K / QK + k];
-      }
+  for (int m = 0; m < M; m++) {
+    for (int k = 0; k < (K / QK); k++) {
+      a[m * K / QK + k].scale = as_in[m * K / QK + k];
+    }
   }
 #if !NPU_NEW_AT
   for (int n = 0; n < N; n++) {
@@ -129,13 +119,12 @@ void trans_f32_to_e4m3() {
       b[n * K / QK + k].scale = bs_in[n * K / QK + k];
     }
   }
-  for (int n = 0; n < N; n++)
-  {
-      for (int k = 0; k < K; k++)
-      {
-          b[(n * K + k) / QK].v[k % QK] = __f32_to_e4m3(b_in[n * K + k]);
-          fp_check(__e4m3_to_f32(b[(n * K + k) / QK].v[k % QK]), b_in[n * K + k], 0.0f);
-      }
+  for (int n = 0; n < N; n++) {
+    for (int k = 0; k < K; k++) {
+      b[(n * K + k) / QK].v[k % QK] = __f32_to_e4m3(b_in[n * K + k]);
+      fp_check(__e4m3_to_f32(b[(n * K + k) / QK].v[k % QK]), b_in[n * K + k],
+               0.0f);
+    }
   }
 #endif
   for (int m = 0; m < M; m++) {
@@ -151,16 +140,16 @@ void trans_f32_to_e4m3() {
 static struct NPURuntimeState runtime;
 static struct NPUKernelDesc *kernel_desc;
 
-static uint64_t src_0_addr = 0x81000000;
-static uint64_t src_1_addr = 0x82000000;
-static uint64_t dst_0_addr = 0x83000000;
+uint64_t src_0_addr = 0x81000000;
+uint64_t src_1_addr = 0x91000000;
+uint64_t dst_0_addr = 0xa1000000;
 
 static void testrt_npu_init() {
   ssize_t err = 0;
   printf("[INFO] Initializing Runtime..\n");
   err = npu_runtime_init(&runtime);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to initialize Runtime: err=%ld\n", err);
+    printf("[ERROR] Failed to initialize Runtime: err=%zd\n", err);
     exit(-1);
   }
   printf("[INFO] Runtime initialized successfully.\n");
@@ -170,7 +159,7 @@ static void testrt_npu_load_kernel_set() {
   ssize_t err = 0;
   err = npu_runtime_load_kernelset(&runtime, &__general_entry_fpga);
   if (err != NPU_SUCCESS) {
-    printf("Failed to load kernel set: err=%ld\n", err);
+    printf("Failed to load kernel set: err=%zd\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -180,9 +169,10 @@ static void testrt_npu_load_kernel_set() {
 static void testrt_run_tx_init_kernel() {
   ssize_t err = 0;
   struct NPUKernelDesc *tx_init_kernel_desc;
-  err = npu_runtime_get_kernel_desc(&runtime, "__tx_init", &tx_init_kernel_desc);
+  err =
+      npu_runtime_get_kernel_desc(&runtime, "__tx_init", &tx_init_kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description for __tx_init: err=%ld\n", err);
+    printf("Failed to get kernel description for __tx_init: err=%zd\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
@@ -192,22 +182,22 @@ static void testrt_run_tx_init_kernel() {
   err = npu_runtime_kernel_start(&runtime, tx_init_kernel_desc, &kernel_ret, 0);
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    printf("[ERROR] Failed to start kernel : err=%zd\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
   printf("[INFO] Kernel __tx_init run successfully.\n");
 }
 
-static void testrt_npu_get_kernel_desc() {
+static void testrt_npu_get_kernel_desc(const char *kernel_name) {
   ssize_t err = 0;
-  err = npu_runtime_get_kernel_desc(&runtime, "gmma_e4m3q_fp32_AT_QK256", &kernel_desc);
+  err = npu_runtime_get_kernel_desc(&runtime, kernel_name, &kernel_desc);
   if (err != NPU_SUCCESS) {
-    printf("Failed to get kernel description: err=%ld\n", err);
+    printf("Failed to get kernel description: err=%zd\n", err);
     npu_runtime_deinit(&runtime);
     exit(-1);
   }
-  printf("[INFO] Loaded gmma_e4m3q_fp32_AT_QK256 kernel desc successfully.\n");
+  printf("[INFO] Loaded %s kernel desc successfully.\n", kernel_desc->name);
 }
 
 static void testrt_npu_memcpy_in() {
@@ -247,12 +237,10 @@ static void testrt_npu_memcpy_out() {
 
 void check_result() {
   printf("[INFO] Check result ...\n");
-  for (int n = 0; n < N; n++)
-  {
-      for (int m = 0; m < M; m++)
-      {
-          fp_checkr(m, n, c[n * M + m], c_real[n * M + m], 0.1f);
-      }
+  for (int n = 0; n < N; n++) {
+    for (int m = 0; m < M; m++) {
+      fp_checkr(m, n, c[n * M + m], c_real[n * M + m], 0.01f);
+    }
   }
   printf("[INFO] Result check successfully!\n");
 }
@@ -311,11 +299,12 @@ int main(int argc, char **argv) {
 #endif
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
-    printf("[ERROR] Failed to start kernel : err=%ld\n", err);
+    printf("[ERROR] Failed to start kernel : err=%zd\n", err);
     npu_runtime_deinit(&runtime);
     return -1;
   }
-  printf("[INFO] Kernel gmma_e4m3q_fp32_AT_QK256 run successfully.\n");
+
+  printf("[INFO] Kernel %s run successfully.\n", kernel_desc->name);
 
   // Copy out
   testrt_npu_memcpy_out();
@@ -326,6 +315,7 @@ int main(int argc, char **argv) {
 #if !NPU_SPEEDTEST
   // Check result
   check_result();
+#endif
 
   return 0;
 }

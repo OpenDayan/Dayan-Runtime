@@ -5,14 +5,14 @@
 
 #include "NPUDriver.h"
 
-#define BUF_SIZE (1024 * 32)
+#define BUF_SIZE (1024 * 1024 * 1024)
 
 ssize_t test_memcpy(const struct NPUDeviceState *device) {
   ssize_t ret;
 
-  const uint64_t device_addr = 0x80000000;
+  const uint64_t device_addr = 0x81000000;
 
-  const size_t test_num = 8192;
+  const size_t test_num = 1;
 
   char *h2c_buf = (char *)aligned_alloc(4096, BUF_SIZE);
   if (!h2c_buf) {
@@ -22,7 +22,7 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
   std::cout << "h2c_buf address: " << static_cast<void *>(h2c_buf) << std::endl;
 
   for (size_t i = 0; i < BUF_SIZE; ++i) {
-    h2c_buf[i] = i & 0xFF;
+    h2c_buf[i] = 0xFF;
   }
 
   auto h2c_start = std::chrono::high_resolution_clock::now();

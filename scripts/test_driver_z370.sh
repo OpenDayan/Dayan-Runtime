@@ -14,5 +14,5 @@ if [ $? -ne 0 ]; then
 fi
 
 
-ssh "${REMOTE_HOST}" "cd ${REMOTE_DIR} && chmod +x ${EXECUTABLE} && ./${EXECUTABLE}"
+ssh "${REMOTE_HOST}" -t "cd ${REMOTE_DIR} && chmod +x ${EXECUTABLE} && ./${EXECUTABLE}"
 
