@@ -11,12 +11,19 @@
 #include "NPUDriver.h"
 
 #ifdef USE_FPGA
-#define H2C_DEV "/dev/xdma0_h2c_0"
-#define C2H_DEV "/dev/xdma0_c2h_0"
-#else
-#define H2C_DEV "/tmp/virtual_npu/xdma0_h2c_0"
-#define C2H_DEV "/tmp/virtual_npu/xdma0_c2h_0"
+#ifdef DEV_PREFIX
+#undef DEV_PREFIX
+#warning "Overriding DEV_PREFIX to /dev for FPGA usage"
 #endif
+#define DEV_PREFIX "/dev"
+#endif
+
+#ifndef DEV_PREFIX
+#define DEV_PREFIX "/tmp/virtual_npu"
+#endif
+
+#define H2C_DEV (DEV_PREFIX "/xdma0_h2c_0")
+#define C2H_DEV (DEV_PREFIX "/xdma0_c2h_0")
 
 #define MMIO_ADDR_BOOT_ADDR_REG 0x1000
 #define MMIO_ADDR_TILE_RESET_CTRL 0x110000
