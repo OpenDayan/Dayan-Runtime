@@ -200,7 +200,7 @@ ssize_t npu_memcpy_to_dev(const struct NPUDeviceState *device, uint64_t dst,
     wsize += ret;
   }
 
-  return ret;
+  return wsize;
 }
 
 ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
@@ -237,7 +237,7 @@ ssize_t npu_memcpy_from_dev(const struct NPUDeviceState *device, void *dst,
     rsize += ret;
   }
 
-  return ret;
+  return rsize;
 }
 
 // Check device state: WaitLaunch / Busy / Empty
