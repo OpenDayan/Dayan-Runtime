@@ -1,3 +1,6 @@
+#include <cstring>
+#include <float.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -10,13 +13,26 @@
 #include "NPURuntime.h"
 #include "npu_instruction.hpp"
 
+#define NPU_BT 0
+#define NPU_BT_CT 0
+#define NPU_SPEEDTEST 0
+#define NPU_NEW_AT 1
 
-#define check(x, expect)                                                                                     \
-    if (isnan(x) || (x) != (expect))                                                                                     \
-    {                                                                                                        \
-        printf("Error: %s:%d: (%d,%d) %s = %d, expected %d\n", __FILE__, __LINE__, m, n, #x, (x), (expect)); \
-        exit(-1);                                                                                      \
-    }
+#if !((NPU_BT && !NPU_BT_CT && !NPU_SPEEDTEST && !NPU_NEW_AT) ||               \
+      (!NPU_BT && NPU_BT_CT && !NPU_SPEEDTEST && !NPU_NEW_AT) ||               \
+      (!NPU_BT && !NPU_BT_CT && NPU_SPEEDTEST && !NPU_NEW_AT) ||               \
+      (!NPU_BT && !NPU_BT_CT && !NPU_SPEEDTEST && NPU_NEW_AT))
+
+#error "Only support NPU_BT or NPU_BT_CT or NPU_SPEEDTEST"
+
+#endif
+
+#define check(x, expect)                                                       \
+  if (isnan(x) || (x) != (expect)) {                                           \
+    printf("Error: %s:%d: (%d,%d) %s = %d, expected %d\n", __FILE__, __LINE__, \
+           m, n, #x, (x), (expect));                                           \
+    exit(-1);                                                                  \
+  }
 
 #define fp_check(x, expect, eps)                                                               \
     if (isnan(x) || (x) < (expect) - (eps) || (x) > (expect) + (eps))                                      \
@@ -38,19 +54,23 @@ float a_in[M * K] = {
 #include "generated/e4m3q_a_row.gen"
 }; // A[M][K]
 // B mem
+#if !NPU_NEW_AT
 float b_in[N * K] = {
 #include "generated/e4m3q_b_col.gen"
 }; // B[N][K]
+#endif
 // C mem
 
 // A^T mem               DIM0 DIM1
 float as_in[M * K / QK] = {
 #include "generated/e4m3q_as_row.gen"
 }; // A[M][K]
+#if !NPU_NEW_AT
 // B mem
 float bs_in[N * K / QK] = {
 #include "generated/e4m3q_bs_col.gen"
 }; // B[N][K]
+#endif
 // C mem
 
 struct blk_e4m3q
@@ -60,7 +80,13 @@ struct blk_e4m3q
 };
 
 struct blk_e4m3q a[M * K / QK];
+#if NPU_NEW_AT
+float b[N * K] = {
+#include "generated/e4m3q_b_raw_col.gen"
+};
+#else
 struct blk_e4m3q b[N * K / QK];
+#endif
 
 float c[N * M];
 
@@ -97,12 +123,11 @@ void trans_f32_to_e4m3() {
           a[m * K / QK + k].scale = as_in[m * K / QK + k];
       }
   }
-  for (int n = 0; n < N; n++)
-  {
-      for (int k = 0; k < (K / QK); k++)
-      {
-          b[n * K / QK + k].scale = bs_in[n * K / QK + k];
-      }
+#if !NPU_NEW_AT
+  for (int n = 0; n < N; n++) {
+    for (int k = 0; k < (K / QK); k++) {
+      b[n * K / QK + k].scale = bs_in[n * K / QK + k];
+    }
   }
   for (int n = 0; n < N; n++)
   {
@@ -112,13 +137,13 @@ void trans_f32_to_e4m3() {
           fp_check(__e4m3_to_f32(b[(n * K + k) / QK].v[k % QK]), b_in[n * K + k], 0.0f);
       }
   }
-  for (int m = 0; m < M; m++)
-  {
-      for (int k = 0; k < K; k++)
-      {
-          a[(m * K + k) / QK].v[k % QK] = __f32_to_e4m3(a_in[m * K + k]);
-          fp_check(__e4m3_to_f32(a[(m * K + k) / QK].v[k % QK]), a_in[m * K + k], 0.0f);
-      }
+#endif
+  for (int m = 0; m < M; m++) {
+    for (int k = 0; k < K; k++) {
+      a[(m * K + k) / QK].v[k % QK] = __f32_to_e4m3(a_in[m * K + k]);
+      fp_check(__e4m3_to_f32(a[(m * K + k) / QK].v[k % QK]), a_in[m * K + k],
+               0.0f);
+    }
   }
   fp_check(a[1].scale, ((float *)a)[1 * (QK / sizeof(float) + 1)], 0.0f);
 }
@@ -185,33 +210,39 @@ static void testrt_npu_get_kernel_desc() {
   printf("[INFO] Loaded gmma_e4m3q_fp32_AT_QK256 kernel desc successfully.\n");
 }
 
-
-static void testrt_npu_memcpy_in(uint64_t lda, uint64_t ldb, uint64_t ldc) {
+static void testrt_npu_memcpy_in() {
   printf("[INFO] Copy data to device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a, M * lda * sizeof(uint8_t));
+  ssize_t ret = 0;
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_0_addr, (void *)a, sizeof(a));
   if (ret < 0)
-    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%ld\n", src_0_addr, ret);
-  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n", M * lda, src_0_addr);
+    printf("[ERROR] Failed to write src0 to device at 0x%lx: err=%zd\n",
+           src_0_addr, ret);
+  printf("[INFO] Copied src0(%ld Bytes) to device at 0x%lx\n", ret, src_0_addr);
 
-  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b, N * ldb * sizeof(uint8_t));
+  ret = npu_memcpy_to_dev(&runtime.dev_state, src_1_addr, (void *)b, sizeof(b));
   if (ret < 0)
-    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%ld\n", src_1_addr, ret);
-  printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n", N * ldb, src_1_addr);
+    printf("[ERROR] Failed to write src1 to device at 0x%lx: err=%zd\n",
+           src_1_addr, ret);
+  printf("[INFO] Copied src1(%ld Bytes) to device at 0x%lx\n", ret, src_1_addr);
 
-  ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c, N * ldc * sizeof(float));
-  if (ret < 0)
-    printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%ld\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
+  // ret = npu_memcpy_to_dev(&runtime.dev_state, dst_0_addr, (void *)c,
+  // sizeof(c)); if (ret < 0)
+  //   printf("[ERROR] Failed to write dst0 to device: at 0x%lx err=%zd\n",
+  //          dst_0_addr, ret);
+  // printf("[INFO] Copied dst0(%ld Bytes) to device at 0x%lx\n",
+  //        N * ldc * sizeof(float), dst_0_addr);
 }
 
-static void testrt_npu_memcpy_out(uint64_t ldc) {
+static void testrt_npu_memcpy_out() {
   printf("[INFO] Copy data from device ... \n");
-  size_t ret = 0;
-  ret = npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, N * ldc * sizeof(float));
+  ssize_t ret = 0;
+  ret =
+      npu_memcpy_from_dev(&runtime.dev_state, (void *)c, dst_0_addr, sizeof(c));
   if (ret < 0)
-    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%ld\n", dst_0_addr, ret);
-  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", N * ldc * sizeof(float), dst_0_addr);
+    printf("[ERROR] Failed to read dst0 from device: at 0x%lx: err=%zd\n",
+           dst_0_addr, ret);
+  printf("[INFO] Copied dst0(%ld Bytes) from device at 0x%lx\n", ret,
+         dst_0_addr);
 }
 
 void check_result() {
@@ -226,30 +257,58 @@ void check_result() {
   printf("[INFO] Result check successfully!\n");
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   trans_f32_to_e4m3();
   testrt_npu_init();
   testrt_npu_load_kernel_set();
   testrt_run_tx_init_kernel();
 
-  testrt_npu_get_kernel_desc();
+#if NPU_BT
+  testrt_npu_get_kernel_desc("gmma_e4m3q_fp32_BT_QK256");
+#endif
+#if NPU_BT_CT
+  testrt_npu_get_kernel_desc("gmma_e4m3q_fp32_BT_CT_QK256");
+#endif
+#if NPU_SPEEDTEST
+  testrt_npu_get_kernel_desc("k_speedtest");
+#endif
+#if NPU_NEW_AT
+  testrt_npu_get_kernel_desc("gmma_e4m3q_fp32_AT_QK256");
+#endif
 
+#if !NPU_SPEEDTEST
   uint64_t lda = K + K * 4 / QK;
+#if NPU_NEW_AT
+  uint64_t ldb = K;
+#else
   uint64_t ldb = K + K * 4 / QK;
+#endif
   uint64_t ldc = M;
+#else
+  uint64_t lda = K;
+  uint64_t ldb = K;
+  uint64_t ldc = M;
+#endif
   printf("[INFO] M=%d, N=%d, K=%d\n", M, N, K);
   printf("[INFO] lda=%ld, ldb=%ld, ldc=%ld\n", lda, ldb, ldc);
 
   // Copy in
-  testrt_npu_memcpy_in(lda, ldb, ldc);
+  testrt_npu_memcpy_in();
 
   int kernel_ret;
   ssize_t err = 0;
-  printf("[INFO] Start kernel gmma_e4m3q_fp32_AT_QK256 ... \n");
-  err = npu_runtime_kernel_start(&runtime, kernel_desc, &kernel_ret, 9,
-                                 src_0_addr, src_1_addr, dst_0_addr,
-                                 (uint64_t)M, (uint64_t)N, (uint64_t)K,
-                                 lda, ldb, ldc);
+
+  printf("[INFO] Start kernel %s ... \n", kernel_desc->name);
+#if NPU_BT
+  err = npu_runtime_kernel_start(
+      &runtime, kernel_desc, &kernel_ret, 9, src_1_addr, src_0_addr, dst_0_addr,
+      (uint64_t)N, (uint64_t)M, (uint64_t)K, ldb, lda, ldc);
+#endif
+#if NPU_BT_CT || NPU_SPEEDTEST || NPU_NEW_AT
+  err = npu_runtime_kernel_start(
+      &runtime, kernel_desc, &kernel_ret, 9, src_0_addr, src_1_addr, dst_0_addr,
+      (uint64_t)M, (uint64_t)N, (uint64_t)K, lda, ldb, ldc);
+#endif
   printf("[INFO] Kernel ret=%d\n", kernel_ret);
   if (err != NPU_SUCCESS) {
     printf("[ERROR] Failed to start kernel : err=%ld\n", err);
@@ -259,11 +318,12 @@ int main(int argc, char** argv) {
   printf("[INFO] Kernel gmma_e4m3q_fp32_AT_QK256 run successfully.\n");
 
   // Copy out
-  testrt_npu_memcpy_out(ldc);
+  testrt_npu_memcpy_out();
 
   // End
   npu_runtime_deinit(&runtime);
 
+#if !NPU_SPEEDTEST
   // Check result
   check_result();
 
