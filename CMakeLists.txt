@@ -22,6 +22,7 @@ if(USE_FPGA AND DEV_PREFIX)
 endif()
 
 add_executable(npu-test_driver ${SOURCE} test/test_driver.cpp)
+add_executable(npu-test_driver_memset ${SOURCE} test/test_driver_memset.cpp)
 add_executable(npu-test_runtime ${SOURCE} test/test_runtime.cpp ../npu-kernels/general_entry_fpga.packed.c)
 add_executable(npu-test_matmul_e4m3q ${SOURCE} test/test_runtime_matmul_e4m3q.cpp ../npu-kernels/general_entry_fpga.packed.c)
 add_executable(npu-test_matmul ${SOURCE} test/test_runtime_matmul_fp32_fp32_fp32.cpp ../npu-kernels/general_entry_fpga.packed.c)

@@ -14,7 +14,7 @@ ssize_t test_memcpy(const struct NPUDeviceState *device) {
 
   const size_t test_num = 1;
 
-  char *h2c_buf = (char *)aligned_alloc(4096, BUF_SIZE);
+  uint8_t *h2c_buf = (uint8_t *)aligned_alloc(4096, BUF_SIZE);
   if (!h2c_buf) {
     std::cerr << "Failed to allocate h2c_buf" << std::endl;
     return -1;
