@@ -117,6 +117,10 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
   long t0 = 0;
   while(1) {
     ret = npu_check(&runtime->dev_state);
+    if (ret == -NPU_DEVICE_ERRNO_IO) {
+      ret = NPU_ERROR_DEVICE_FAILURE;
+      break;
+    }
     if(ret == -NPU_DEVICE_ERRNO_EMPTY) {
       ret = npu_memcpy_from_dev(&runtime->dev_state, &general_entry_args,
         runtime->kernel_set_desc.args_ptr, sizeof(general_entry_args) - 30 * sizeof(uint64_t));
