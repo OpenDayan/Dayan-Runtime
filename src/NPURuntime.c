@@ -62,6 +62,9 @@ ssize_t npu_runtime_load_kernelset(
 
   ret = npu_mm_init(&runtime->mm, kernel_set_desc->heap, 0x180000000ul);
 
+  runtime->printchar_size = NPU_PRINTCHAR_BUF_SIZE;
+  npu_runtime_malloc(runtime, &runtime->printchar_base, runtime->printchar_size);
+
   return NPU_SUCCESS;
 }
 
@@ -89,8 +92,10 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
   general_entry_args.kernel_entry = kernel_desc->entry;
   general_entry_args.arg_count = arg_count;
   general_entry_args.ret = 0xdeadbeaf;
-  general_entry_args.putchar_buf = 0x80040000; // 0x80040000 - 0x81000000 is putchar buf
-  general_entry_args.putchar_buflength = 0x81000000 - 0x80040000;
+  // general_entry_args.putchar_buf = 0x80040000; // 0x80040000 - 0x81000000 is putchar buf
+  // general_entry_args.putchar_buflength = 0x81000000 - 0x80040000;
+  general_entry_args.putchar_buf = runtime->printchar_base;
+  general_entry_args.putchar_buflength = runtime->printchar_size;
   general_entry_args.putchar_wptr = 0;
 
   va_list args;
@@ -127,7 +132,7 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
       if(kernel_ret) {
         *kernel_ret = general_entry_args.ret;
       }
-      static char printbuf[0x1000000];
+      static char printbuf[NPU_PRINTCHAR_BUF_SIZE];
       npu_memcpy_from_dev(&runtime->dev_state, printbuf, general_entry_args.putchar_buf, general_entry_args.putchar_wptr);
       for(long i = 0 ; i < general_entry_args.putchar_wptr ; i ++) {
         putchar(printbuf[i]);

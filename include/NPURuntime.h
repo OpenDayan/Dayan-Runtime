@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 #define NPU_MAX_KERNEL_ARGS 30
+#define NPU_PRINTCHAR_BUF_SIZE 0x1000000
 
 // Device Kernel Set Description Structure
 struct NPUDeviceKernelSetDesc {
@@ -38,6 +39,10 @@ struct NPURuntimeState {
   struct NPUDeviceState dev_state;
   struct NPUDeviceKernelSetDesc kernel_set_desc;
   
+  // Printchar buffer
+  uint64_t printchar_base;
+  uint64_t printchar_size;
+
   // Memory Management Context
   void *mm;
 };
