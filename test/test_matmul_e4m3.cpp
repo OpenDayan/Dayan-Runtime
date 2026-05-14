@@ -115,7 +115,7 @@ int main() {
     return -1;
   }
 
-  err = npu_runtime_load_kernelset(&runtime, &__general_entry_fpga);
+  err = npu_runtime_load_kernelset(&runtime, nullptr);
   if (err != NPU_SUCCESS) {
     std::cerr << "Failed to load kernel set: " << err << std::endl;
     npu_runtime_deinit(&runtime);

@@ -33,11 +33,21 @@ struct NPUDeviceKernelSetDesc {
   uint64_t perf;                 // Pointer to the start address of perf counter
 };
 
+struct NPUKernelELFImage {
+  const uint8_t *data;
+  size_t size;
+};
+
 // Device Runtime Stateful Structure
 struct NPURuntimeState {
   // TODO
   struct NPUDeviceState dev_state;
   struct NPUDeviceKernelSetDesc kernel_set_desc;
+  void *kernelset_so_handle;
+  uint8_t *owned_kernelset_data;
+  struct NPUKernelDesc *owned_kernel_descs;
+  char **owned_kernel_names;
+  size_t owned_kernel_name_count;
   
   // Printchar buffer
   uint64_t printchar_base;
@@ -78,7 +88,10 @@ void npu_runtime_deinit(struct NPURuntimeState *runtime);
 
 ssize_t npu_runtime_load_kernelset(
     struct NPURuntimeState *runtime,
-    const struct NPUDeviceKernelSetDesc *kernel_set_desc);
+    const char *so_path);
+// Load kernel set from a shared object path.
+// - so_path: explicit .so path. If NULL/empty, runtime performs no eager load
+//            and relies on lazy per-kernel loading in npu_runtime_get_kernel_desc.
 
 ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     const struct NPUKernelDesc *kernel_desc,
@@ -98,6 +111,8 @@ ssize_t npu_runtime_get_meminfo(const struct NPURuntimeState *runtime,
 ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,
   const char *kernel_name,
   struct NPUKernelDesc **kernel_desc_out);
+// If not found in currently loaded kernelset, runtime will try redirect-loading
+// "<NPU_KERNEL_SO_DIR>/<kernel_name>.so" (default dir: /workspace/npu-kernels/bin).
 ssize_t npu_runtime_memset(const struct NPURuntimeState *runtime,
                                      uint64_t  dev_ptr, int c, size_t n);
 

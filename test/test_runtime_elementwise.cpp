@@ -176,7 +176,7 @@ static void testrt_npu_init() {
 
 static void testrt_npu_load_kernel_set() {
   ssize_t err = 0;
-  err = npu_runtime_load_kernelset(&runtime, &__general_entry_fpga);
+  err = npu_runtime_load_kernelset(&runtime, nullptr);
   if (err != NPU_SUCCESS) {
     printf("Failed to load kernel set: err=%ld\n", err);
     npu_runtime_deinit(&runtime);

@@ -1,6 +1,10 @@
 #include "avl_tree.hpp"
 #include "NPURuntime.h"
 #include <iostream>
+#include <dirent.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 class NPUMemoryBlock {
 public:
@@ -83,6 +87,57 @@ public:
     }
 };
 extern "C" {
+    static ssize_t npu_runtime_lazy_bootstrap_mm(struct NPURuntimeState *runtime) {
+        if (runtime == NULL) {
+            return NPU_ERROR_INVALID_ARGUMENT;
+        }
+        if (runtime->mm != NULL) {
+            return NPU_SUCCESS;
+        }
+
+        const char *bootstrap_so = getenv("NPU_KERNEL_BOOTSTRAP_SO");
+        if (bootstrap_so != NULL && bootstrap_so[0] != '\0') {
+            ssize_t ret = npu_runtime_load_kernelset(runtime, bootstrap_so);
+            if (ret == NPU_SUCCESS && runtime->mm != NULL) {
+                return NPU_SUCCESS;
+            }
+        }
+
+        const char *kernel_so_dir = getenv("NPU_KERNEL_SO_DIR");
+        if (kernel_so_dir == NULL || kernel_so_dir[0] == '\0') {
+            kernel_so_dir = "/workspace/npu-kernels/bin";
+        }
+
+        DIR *dir = opendir(kernel_so_dir);
+        if (dir == NULL) {
+            return NPU_ERROR_NOT_INITIALIZED;
+        }
+
+        struct dirent *ent = NULL;
+        while ((ent = readdir(dir)) != NULL) {
+            const char *name = ent->d_name;
+            size_t len = strlen(name);
+            if (len < 4 || strcmp(name + len - 3, ".so") != 0) {
+                continue;
+            }
+
+            char so_path[PATH_MAX];
+            int written = snprintf(so_path, sizeof(so_path), "%s/%s", kernel_so_dir, name);
+            if (written <= 0 || (size_t)written >= sizeof(so_path)) {
+                continue;
+            }
+
+            ssize_t ret = npu_runtime_load_kernelset(runtime, so_path);
+            if (ret == NPU_SUCCESS && runtime->mm != NULL) {
+                closedir(dir);
+                return NPU_SUCCESS;
+            }
+        }
+
+        closedir(dir);
+        return NPU_ERROR_NOT_INITIALIZED;
+    }
+
     ssize_t npu_mm_init(void** mm, uint64_t heap_start, uint64_t heap_end) {
         *mm = new NPUMemoryManagement(heap_start, heap_end);
         return NPU_SUCCESS;
@@ -95,12 +150,30 @@ extern "C" {
     }
 
     ssize_t npu_runtime_malloc(const struct NPURuntimeState *runtime, uint64_t *dev_ptr, size_t size) {
+        if (runtime == NULL || dev_ptr == NULL) {
+            return NPU_ERROR_INVALID_ARGUMENT;
+        }
+        if (runtime->mm == NULL) {
+            ssize_t ret = npu_runtime_lazy_bootstrap_mm((struct NPURuntimeState *)runtime);
+            if (ret != NPU_SUCCESS) {
+                return ret;
+            }
+        }
         auto mm = (NPUMemoryManagement*)runtime->mm;
         bool success = mm->alloc(dev_ptr, size);
         return success ? NPU_SUCCESS : -NPU_DEVICE_ERRNO_INVALID_SIZE;
     }
 
     ssize_t npu_runtime_free(const struct NPURuntimeState *runtime, uint64_t  dev_ptr) {
+        if (runtime == NULL) {
+            return NPU_ERROR_INVALID_ARGUMENT;
+        }
+        if (runtime->mm == NULL) {
+            ssize_t ret = npu_runtime_lazy_bootstrap_mm((struct NPURuntimeState *)runtime);
+            if (ret != NPU_SUCCESS) {
+                return ret;
+            }
+        }
         auto mm = (NPUMemoryManagement*)runtime->mm;
         bool success = mm->dealloc(dev_ptr);
         return success ? NPU_SUCCESS : -NPU_DEVICE_ERRNO_INVALID_ARGS;
@@ -108,6 +181,15 @@ extern "C" {
 
     ssize_t npu_runtime_get_meminfo(const struct NPURuntimeState *runtime,
         size_t * free, size_t * total) {
+        if (runtime == NULL || free == NULL || total == NULL) {
+            return NPU_ERROR_INVALID_ARGUMENT;
+        }
+        if (runtime->mm == NULL) {
+            ssize_t ret = npu_runtime_lazy_bootstrap_mm((struct NPURuntimeState *)runtime);
+            if (ret != NPU_SUCCESS) {
+                return ret;
+            }
+        }
         auto mm = (NPUMemoryManagement*)runtime->mm;
         if(!mm) {
             return -NPU_DEVICE_ERRNO_INVALID_ARGS;
