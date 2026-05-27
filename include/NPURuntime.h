@@ -38,6 +38,22 @@ struct NPUKernelELFImage {
   size_t size;
 };
 
+struct NPUKernelIRBCImage {
+  const uint8_t *data;
+  size_t size;
+};
+
+struct NPUFatBinaryEntry {
+  // Optional logical id/module name for diagnostics.
+  const char *id;
+  // ISA version tag used for runtime variant selection (e.g. "v0.1").
+  const char *isa_version;
+  // Embedded ELF image produced at compile time.
+  const struct NPUKernelELFImage *image;
+  // Optional LLVM bitcode image used as JIT fallback.
+  const struct NPUKernelIRBCImage *ir_bc_image;
+};
+
 // Device Runtime Stateful Structure
 struct NPURuntimeState {
   // TODO
@@ -55,6 +71,12 @@ struct NPURuntimeState {
 
   // Memory Management Context
   void *mm;
+
+  // Optional nvcc-like embedded fatbinary registry (non-owning pointers).
+  const struct NPUFatBinaryEntry *fatbin_entries;
+  size_t fatbin_entry_count;
+  // Device ISA version used to pick the best fatbin variant.
+  const char *device_isa_version;
 };
 
 struct GeneralEntryArgs {
@@ -92,6 +114,18 @@ ssize_t npu_runtime_load_kernelset(
 // Load kernel set from a shared object path.
 // - so_path: explicit .so path. If NULL/empty, runtime performs no eager load
 //            and relies on lazy per-kernel loading in npu_runtime_get_kernel_desc.
+
+ssize_t npu_runtime_load_kernelset_image(
+    struct NPURuntimeState *runtime,
+    const struct NPUKernelELFImage *image);
+// Load kernel set from an embedded ELF image. This enables nvcc-like flow:
+// compile-time embedding + runtime registration/loading without dlopen().
+
+ssize_t npu_runtime_load_kernelset_from_memory(
+    struct NPURuntimeState *runtime,
+    const uint8_t *elf_data,
+    size_t elf_size);
+// Convenience wrapper of npu_runtime_load_kernelset_image for raw [ptr,size].
 
 ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     const struct NPUKernelDesc *kernel_desc,

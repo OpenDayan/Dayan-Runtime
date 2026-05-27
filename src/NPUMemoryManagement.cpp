@@ -87,12 +87,50 @@ public:
     }
 };
 extern "C" {
+    static bool npu_runtime_mm_isa_matches(const char *entry_isa, const char *device_isa) {
+        if (device_isa == NULL || device_isa[0] == '\0') {
+            device_isa = "v0.1";
+        }
+        if (entry_isa == NULL || entry_isa[0] == '\0') {
+            entry_isa = "v0.1";
+        }
+        return strcmp(entry_isa, device_isa) == 0;
+    }
+
     static ssize_t npu_runtime_lazy_bootstrap_mm(struct NPURuntimeState *runtime) {
         if (runtime == NULL) {
             return NPU_ERROR_INVALID_ARGUMENT;
         }
         if (runtime->mm != NULL) {
             return NPU_SUCCESS;
+        }
+
+        // Prefer embedded fatbin-native images first so mm bootstrap no longer
+        // depends on per-kernel .so artifacts.
+        if (runtime->fatbin_entries != NULL && runtime->fatbin_entry_count > 0) {
+            for (size_t i = 0; i < runtime->fatbin_entry_count; i++) {
+                const struct NPUFatBinaryEntry *entry = &runtime->fatbin_entries[i];
+                if (entry == NULL || entry->image == NULL) {
+                    continue;
+                }
+                if (!npu_runtime_mm_isa_matches(entry->isa_version, runtime->device_isa_version)) {
+                    continue;
+                }
+                ssize_t ret = npu_runtime_load_kernelset_image(runtime, entry->image);
+                if (ret == NPU_SUCCESS && runtime->mm != NULL) {
+                    return NPU_SUCCESS;
+                }
+            }
+            for (size_t i = 0; i < runtime->fatbin_entry_count; i++) {
+                const struct NPUFatBinaryEntry *entry = &runtime->fatbin_entries[i];
+                if (entry == NULL || entry->image == NULL) {
+                    continue;
+                }
+                ssize_t ret = npu_runtime_load_kernelset_image(runtime, entry->image);
+                if (ret == NPU_SUCCESS && runtime->mm != NULL) {
+                    return NPU_SUCCESS;
+                }
+            }
         }
 
         const char *bootstrap_so = getenv("NPU_KERNEL_BOOTSTRAP_SO");

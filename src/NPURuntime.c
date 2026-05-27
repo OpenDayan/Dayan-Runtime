@@ -3,9 +3,12 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <elf.h>
 #include <limits.h>
 #include <dirent.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 
 #include "NPUDriver.h"
 
@@ -17,6 +20,10 @@ extern "C" {
 
 // Keep link compatibility for binaries that still reference this symbol directly.
 __attribute__((weak)) struct NPUDeviceKernelSetDesc __bin_kernels_pack = {0};
+// Auto-discovered default embedded fatbinary registry (optional, weak).
+extern const struct NPUFatBinaryEntry __npu_default_fatbin_entries[]
+    __attribute__((weak));
+extern const size_t __npu_default_fatbin_entry_count __attribute__((weak));
 
 static ssize_t npu_runtime_build_kernelset_from_elf_image(
     struct NPURuntimeState *runtime,
@@ -26,6 +33,291 @@ static ssize_t npu_runtime_build_kernelset_from_elf_image(
     struct NPUKernelDesc **out_kernels,
     char ***out_names,
     size_t *out_name_count);
+
+static const char *npu_runtime_get_device_isa_version(void) {
+  const char *isa = getenv("NPU_ISA_VERSION");
+  if (isa == NULL || isa[0] == '\0') {
+    return "v0.1";
+  }
+  return isa;
+}
+
+static int npu_runtime_isa_matches(const char *entry_isa,
+                                   const char *device_isa) {
+  if (device_isa == NULL || device_isa[0] == '\0') {
+    device_isa = "v0.1";
+  }
+  if (entry_isa == NULL || entry_isa[0] == '\0') {
+    entry_isa = "v0.1";
+  }
+  return strcmp(entry_isa, device_isa) == 0;
+}
+
+static int npu_runtime_env_truthy(const char *name) {
+  const char *v = getenv(name);
+  if (v == NULL || v[0] == '\0') {
+    return 0;
+  }
+  return strcmp(v, "1") == 0 || strcmp(v, "true") == 0 ||
+         strcmp(v, "TRUE") == 0 || strcmp(v, "yes") == 0 ||
+         strcmp(v, "YES") == 0;
+}
+
+static int npu_runtime_fatbin_entry_matches_kernel(const struct NPUFatBinaryEntry *entry,
+                                                   const char *kernel_name) {
+  if (entry == NULL || entry->id == NULL || kernel_name == NULL) {
+    return 0;
+  }
+  size_t name_len = strlen(kernel_name);
+  if (strncmp(entry->id, kernel_name, name_len) != 0) {
+    return 0;
+  }
+  char suffix = entry->id[name_len];
+  return suffix == '\0' || suffix == '@';
+}
+
+static int npu_runtime_write_file(const char *path,
+                                  const uint8_t *data,
+                                  size_t size) {
+  if (path == NULL || data == NULL || size == 0) {
+    return -1;
+  }
+  int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+  if (fd < 0) {
+    return -1;
+  }
+  size_t written = 0;
+  while (written < size) {
+    ssize_t ret = write(fd, data + written, size - written);
+    if (ret <= 0) {
+      close(fd);
+      return -1;
+    }
+    written += (size_t)ret;
+  }
+  close(fd);
+  return 0;
+}
+
+static int npu_runtime_read_file(const char *path,
+                                 uint8_t **out_data,
+                                 size_t *out_size) {
+  if (path == NULL || out_data == NULL || out_size == NULL) {
+    return -1;
+  }
+  FILE *f = fopen(path, "rb");
+  if (f == NULL) {
+    return -1;
+  }
+  if (fseek(f, 0, SEEK_END) != 0) {
+    fclose(f);
+    return -1;
+  }
+  long sz = ftell(f);
+  if (sz <= 0) {
+    fclose(f);
+    return -1;
+  }
+  if (fseek(f, 0, SEEK_SET) != 0) {
+    fclose(f);
+    return -1;
+  }
+  uint8_t *buf = (uint8_t *)malloc((size_t)sz);
+  if (buf == NULL) {
+    fclose(f);
+    return -1;
+  }
+  if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+    free(buf);
+    fclose(f);
+    return -1;
+  }
+  fclose(f);
+  *out_data = buf;
+  *out_size = (size_t)sz;
+  return 0;
+}
+
+static ssize_t npu_runtime_try_jit_from_ir_bc(
+    struct NPURuntimeState *runtime,
+    const struct NPUFatBinaryEntry *entry,
+    const char *kernel_name) {
+  if (runtime == NULL || entry == NULL || kernel_name == NULL ||
+      entry->ir_bc_image == NULL || entry->ir_bc_image->data == NULL ||
+      entry->ir_bc_image->size == 0) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  const char *npu_kernels_dir = getenv("NPU_KERNELS_DIR");
+  if (npu_kernels_dir == NULL || npu_kernels_dir[0] == '\0') {
+    npu_kernels_dir = "/workspace/npu-kernels";
+  }
+  const char *llvm_build_dir = getenv("LLVM_BUILD_DIR");
+  if (llvm_build_dir == NULL || llvm_build_dir[0] == '\0') {
+    llvm_build_dir = "/workspace/llvm-project/llvm-build";
+  }
+
+  char tmp_dir_template[] = "/tmp/npu_jit_XXXXXX";
+  char *tmp_dir = mkdtemp(tmp_dir_template);
+  if (tmp_dir == NULL) {
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  char bc_path[PATH_MAX];
+  char obj_path[PATH_MAX];
+  char elf_path[PATH_MAX];
+  if (snprintf(bc_path, sizeof(bc_path), "%s/kernel.bc", tmp_dir) >= (int)sizeof(bc_path) ||
+      snprintf(obj_path, sizeof(obj_path), "%s/kernel.o", tmp_dir) >= (int)sizeof(obj_path) ||
+      snprintf(elf_path, sizeof(elf_path), "%s/kernel.elf", tmp_dir) >= (int)sizeof(elf_path)) {
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  if (npu_runtime_write_file(bc_path, entry->ir_bc_image->data, entry->ir_bc_image->size) != 0) {
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  char clang_path[PATH_MAX];
+  if (snprintf(clang_path, sizeof(clang_path), "%s/bin/clang", llvm_build_dir) >=
+      (int)sizeof(clang_path)) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+  if (access(clang_path, X_OK) != 0) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  char compile_cmd[8192];
+  int compile_len = snprintf(
+      compile_cmd, sizeof(compile_cmd),
+      "\"%s\" -g -mcmodel=medany -std=gnu99 -O3 "
+      "--target=riscv64-unknown-elf -march=rv64g -mabi=lp64d "
+      "-fno-common -fno-builtin-printf -fno-pic -fno-exceptions -fno-rtti -mno-relax "
+      "-Xclang -target-feature -Xclang +txlsu "
+      "-Xclang -target-feature -Xclang +txmat "
+      "-Xclang -target-feature -Xclang +txvec "
+      "-Xclang -target-feature -Xclang +txbase "
+      "-Xclang -target-feature -Xclang +txmacro "
+      "-c \"%s\" -o \"%s\"",
+      clang_path, bc_path, obj_path);
+  if (compile_len <= 0 || compile_len >= (int)sizeof(compile_cmd)) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  int rc = system(compile_cmd);
+  if (rc != 0) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_KERNEL_NOT_FOUND;
+  }
+
+  char link_cmd[12288];
+  int link_len = snprintf(
+      link_cmd, sizeof(link_cmd),
+      "\"%s\" -g -mcmodel=medany -std=gnu99 -O3 "
+      "--target=riscv64-unknown-elf -march=rv64g -mabi=lp64d "
+      "-fno-common -fno-builtin-printf -fno-pic -fno-exceptions -fno-rtti -mno-relax "
+      "-static -nostartfiles -nostdlib -nodefaultlibs -mcmodel=medany -fuse-ld=lld "
+      "-Wl,--gc-sections "
+      "-o \"%s\" \"%s\" "
+      "\"%s/build/common_kernel.o\" \"%s/build/math.o\" \"%s/build/syscalls.o\" "
+      "\"%s/build/crt.o\" \"%s/build/trap.o\" "
+      "-T \"%s/libs/test.ld\"",
+      clang_path, elf_path, obj_path, npu_kernels_dir, npu_kernels_dir, npu_kernels_dir,
+      npu_kernels_dir, npu_kernels_dir,
+      npu_kernels_dir);
+  if (link_len <= 0 || link_len >= (int)sizeof(link_cmd)) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  rc = system(link_cmd);
+  if (rc != 0) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_KERNEL_NOT_FOUND;
+  }
+
+  uint8_t *jit_elf = NULL;
+  size_t jit_elf_size = 0;
+  if (npu_runtime_read_file(elf_path, &jit_elf, &jit_elf_size) != 0) {
+    unlink(bc_path);
+    unlink(obj_path);
+    unlink(elf_path);
+    rmdir(tmp_dir);
+    return NPU_ERROR_DEVICE_FAILURE;
+  }
+
+  ssize_t ret = npu_runtime_load_kernelset_from_memory(runtime, jit_elf, jit_elf_size);
+  if (ret == NPU_SUCCESS) {
+    printf("[npu-runtime][jit] loaded kernel '%s' from ir_bc (isa=%s)\n",
+           kernel_name,
+           runtime->device_isa_version ? runtime->device_isa_version : "v0.1");
+  }
+  free(jit_elf);
+  unlink(bc_path);
+  unlink(obj_path);
+  unlink(elf_path);
+  rmdir(tmp_dir);
+  return ret;
+}
+
+static int npu_runtime_probe_image_for_kernel(
+    struct NPURuntimeState *runtime,
+    const struct NPUKernelELFImage *image,
+    const char *kernel_name) {
+  if (runtime == NULL || image == NULL || kernel_name == NULL ||
+      image->data == NULL || image->size == 0) {
+    return 0;
+  }
+
+  struct NPUDeviceKernelSetDesc tmp_desc = {0};
+  uint8_t *tmp_data = NULL;
+  struct NPUKernelDesc *tmp_kernels = NULL;
+  char **tmp_names = NULL;
+  size_t tmp_name_count = 0;
+  ssize_t ret = npu_runtime_build_kernelset_from_elf_image(
+      runtime, image, &tmp_desc, &tmp_data, &tmp_kernels, &tmp_names, &tmp_name_count);
+  if (ret != NPU_SUCCESS) {
+    return 0;
+  }
+
+  int found = 0;
+  for (size_t i = 0; i < tmp_desc.kernel_count; i++) {
+    const char *name = tmp_desc.kernels[i].name;
+    if (name != NULL && strcmp(name, kernel_name) == 0) {
+      found = 1;
+      break;
+    }
+  }
+
+  for (size_t i = 0; i < tmp_name_count; i++) {
+    free(tmp_names[i]);
+  }
+  free(tmp_names);
+  free(tmp_kernels);
+  free(tmp_data);
+  return found;
+}
 
 static void npu_runtime_release_owned_kernelset(struct NPURuntimeState *runtime) {
   if (runtime == NULL) {
@@ -137,6 +429,63 @@ static ssize_t npu_runtime_try_load_kernel_by_name(
   // Prevent path traversal; runtime resolves by logical kernel name only.
   if (strchr(kernel_name, '/') != NULL || strchr(kernel_name, '\\') != NULL) {
     return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  // First, probe and load from registered compile-time embedded images.
+  if (runtime->fatbin_entries != NULL && runtime->fatbin_entry_count > 0) {
+    const struct NPUFatBinaryEntry *fallback_native_entry = NULL;
+    const struct NPUFatBinaryEntry *fallback_ir_entry = NULL;
+    int prefer_ir_bc = npu_runtime_env_truthy("NPU_FATBIN_PREFER_IR_BC");
+    if (!prefer_ir_bc) {
+      for (size_t i = 0; i < runtime->fatbin_entry_count; i++) {
+        const struct NPUFatBinaryEntry *entry = &runtime->fatbin_entries[i];
+        if (entry == NULL) {
+          continue;
+        }
+        if (entry->image == NULL ||
+            !npu_runtime_probe_image_for_kernel(runtime, entry->image, kernel_name)) {
+          continue;
+        }
+        if (npu_runtime_isa_matches(entry->isa_version, runtime->device_isa_version)) {
+          return npu_runtime_load_kernelset_image(runtime, entry->image);
+        }
+        if (fallback_native_entry == NULL) {
+          fallback_native_entry = entry;
+        }
+      }
+      if (fallback_native_entry != NULL) {
+        return npu_runtime_load_kernelset_image(runtime, fallback_native_entry->image);
+      }
+    }
+
+    for (size_t i = 0; i < runtime->fatbin_entry_count; i++) {
+      const struct NPUFatBinaryEntry *entry = &runtime->fatbin_entries[i];
+      if (entry == NULL || entry->ir_bc_image == NULL) {
+        continue;
+      }
+      if (entry->image != NULL) {
+        if (!npu_runtime_probe_image_for_kernel(runtime, entry->image, kernel_name)) {
+          continue;
+        }
+      } else if (!npu_runtime_fatbin_entry_matches_kernel(entry, kernel_name)) {
+        continue;
+      }
+      if (npu_runtime_isa_matches(entry->isa_version, runtime->device_isa_version)) {
+        ssize_t jit_ret = npu_runtime_try_jit_from_ir_bc(runtime, entry, kernel_name);
+        if (jit_ret == NPU_SUCCESS) {
+          return jit_ret;
+        }
+      }
+      if (fallback_ir_entry == NULL) {
+        fallback_ir_entry = entry;
+      }
+    }
+    if (fallback_ir_entry != NULL) {
+      ssize_t jit_ret = npu_runtime_try_jit_from_ir_bc(runtime, fallback_ir_entry, kernel_name);
+      if (jit_ret == NPU_SUCCESS) {
+        return jit_ret;
+      }
+    }
   }
 
   const char *kernel_so_dir = getenv("NPU_KERNEL_SO_DIR");
@@ -427,6 +776,64 @@ static ssize_t npu_runtime_load_kernelset_desc(
   return NPU_SUCCESS;
 }
 
+ssize_t npu_runtime_load_kernelset_image(
+    struct NPURuntimeState *runtime,
+    const struct NPUKernelELFImage *image) {
+  if (runtime == NULL || image == NULL || image->data == NULL || image->size == 0) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  struct NPUDeviceKernelSetDesc elf_desc = {0};
+  uint8_t *data_copy = NULL;
+  struct NPUKernelDesc *kernels_copy = NULL;
+  char **names_copy = NULL;
+  size_t names_count = 0;
+  ssize_t build_ret = npu_runtime_build_kernelset_from_elf_image(
+      runtime, image, &elf_desc, &data_copy, &kernels_copy, &names_copy, &names_count);
+  if (build_ret != NPU_SUCCESS) {
+    return build_ret;
+  }
+
+  npu_runtime_release_owned_kernelset(runtime);
+  ssize_t ret = npu_runtime_load_kernelset_desc(runtime, &elf_desc);
+  if (ret != NPU_SUCCESS) {
+    for (size_t i = 0; i < names_count; i++) {
+      free(names_copy[i]);
+    }
+    free(names_copy);
+    free(kernels_copy);
+    free(data_copy);
+    return ret;
+  }
+
+  runtime->owned_kernelset_data = data_copy;
+  runtime->owned_kernel_descs = kernels_copy;
+  runtime->owned_kernel_names = names_copy;
+  runtime->owned_kernel_name_count = names_count;
+
+  // Embedded image path does not require keeping a dlopen handle.
+  if (runtime->kernelset_so_handle) {
+    dlclose(runtime->kernelset_so_handle);
+    runtime->kernelset_so_handle = NULL;
+  }
+
+  return NPU_SUCCESS;
+}
+
+ssize_t npu_runtime_load_kernelset_from_memory(
+    struct NPURuntimeState *runtime,
+    const uint8_t *elf_data,
+    size_t elf_size) {
+  if (runtime == NULL || elf_data == NULL || elf_size == 0) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+  struct NPUKernelELFImage image = {
+      .data = elf_data,
+      .size = elf_size,
+  };
+  return npu_runtime_load_kernelset_image(runtime, &image);
+}
+
 ssize_t npu_runtime_init(struct NPURuntimeState *runtime) {
   ssize_t ret;
   if (runtime == NULL) {
@@ -446,6 +853,14 @@ ssize_t npu_runtime_init(struct NPURuntimeState *runtime) {
   runtime->owned_kernel_descs = NULL;
   runtime->owned_kernel_names = NULL;
   runtime->owned_kernel_name_count = 0;
+  runtime->fatbin_entries = NULL;
+  runtime->fatbin_entry_count = 0;
+  runtime->device_isa_version = npu_runtime_get_device_isa_version();
+  if (__npu_default_fatbin_entries != NULL &&
+      __npu_default_fatbin_entry_count > 0) {
+    runtime->fatbin_entries = __npu_default_fatbin_entries;
+    runtime->fatbin_entry_count = __npu_default_fatbin_entry_count;
+  }
 
   return NPU_SUCCESS;
 }
