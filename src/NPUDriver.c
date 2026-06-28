@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
+#include <poll.h>
 
 #include "NPUDriver.h"
 
@@ -24,10 +26,28 @@
 
 #define H2C_DEV (DEV_PREFIX "/xdma0_h2c_0")
 #define C2H_DEV (DEV_PREFIX "/xdma0_c2h_0")
+#define USER_DEV (DEV_PREFIX "/xdma0_user")
+#define EVENT_DEV (DEV_PREFIX "/xdma0_events_0")
 
 #define MMIO_ADDR_BOOT_ADDR_REG 0x1000
 #define MMIO_ADDR_TILE_RESET_CTRL 0x110000
-#define MMIO_ADDR_CLINT 0x2000000
+#define MMIO_ADDR_CLINT 0x20000
+#define MMIO_BOOT_ADDR_PER_CORE_SIZE 8
+#define MMIO_CLINT_PER_CORE_SIZE 0x4
+#define NPU_INTC_STATUS_OFF 0x00
+#define NPU_INTC_ENABLE_OFF 0x04
+#define NPU_INTC_SET_OFF 0x08
+#define NPU_INTC_CLEAR_OFF 0x0C
+#define NPU_INTC_MAILBOX0_OFF 0x10
+#define NPU_INTC_MAILBOX_STRIDE 8
+
+static inline uint64_t npu_core_boot_addr_reg(const struct NPUDeviceState *device) {
+  return MMIO_ADDR_BOOT_ADDR_REG + (uint64_t)device->core_id * MMIO_BOOT_ADDR_PER_CORE_SIZE;
+}
+
+static inline uint64_t npu_core_clint_addr(const struct NPUDeviceState *device) {
+  return MMIO_ADDR_CLINT + (uint64_t)device->core_id * MMIO_CLINT_PER_CORE_SIZE;
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +59,11 @@ ssize_t npu_device_init(struct NPUDeviceState *device) {
     ret = -NPU_DEVICE_ERRNO_INVALID_ARGS;
     goto npu_device_error;
   }
+
+  device->xdma_c2h_fd = -1;
+  device->xdma_h2c_fd = -1;
+  device->xdma_user_fd = -1;
+  device->xdma_event_fd = -1;
 
   if (device->xdma_id != 0) {
     // currently only support one device
@@ -57,6 +82,9 @@ ssize_t npu_device_init(struct NPUDeviceState *device) {
     ret = -NPU_DEVICE_ERRNO_IO;
     goto xdma_c2h_error;
   }
+
+  device->xdma_user_fd = open(USER_DEV, O_RDWR);
+  device->xdma_event_fd = open(EVENT_DEV, O_RDONLY | O_NONBLOCK);
 
   device->valid = 1; // Mark the device as valid
 
@@ -90,6 +118,16 @@ void npu_device_deinit(struct NPUDeviceState *device) {
   if (device->xdma_h2c_fd >= 0) {
     close(device->xdma_h2c_fd);
     device->xdma_h2c_fd = -1;
+  }
+
+  if (device->xdma_user_fd >= 0) {
+    close(device->xdma_user_fd);
+    device->xdma_user_fd = -1;
+  }
+
+  if (device->xdma_event_fd >= 0) {
+    close(device->xdma_event_fd);
+    device->xdma_event_fd = -1;
   }
 
   device->valid = 0; // Mark the device as invalid
@@ -253,7 +291,7 @@ ssize_t npu_check(const struct NPUDeviceState *device) {
 
   ssize_t ret;
   uint64_t boot_address;
-  ret = npu_mmio_read64(device, MMIO_ADDR_BOOT_ADDR_REG, &boot_address);
+  ret = npu_mmio_read64(device, npu_core_boot_addr_reg(device), &boot_address);
   if (ret < 0) {
     return ret;
   }
@@ -285,14 +323,105 @@ ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
     return ret;
   }
 
-  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, boot_address);
+  ret = npu_mmio_write64(device, npu_core_boot_addr_reg(device), boot_address);
   if (ret < 0) {
     return ret;
   }
 
   // write clint msip to start
-  ret = npu_mmio_write32(device, MMIO_ADDR_CLINT, 1);
+  ret = npu_mmio_write32(device, npu_core_clint_addr(device), 1);
   return ret;
+}
+
+ssize_t npu_wait_interrupt(const struct NPUDeviceState *device, int timeout_ms) {
+  if (device == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
+  if (device->xdma_event_fd < 0) {
+    return -NPU_DEVICE_ERRNO_UNSUPPORTED;
+  }
+
+  struct pollfd pfd = {
+      .fd = device->xdma_event_fd,
+      .events = POLLIN,
+      .revents = 0,
+  };
+  int ret;
+  do {
+    ret = poll(&pfd, 1, timeout_ms);
+  } while (ret < 0 && errno == EINTR);
+
+  if (ret < 0) {
+    return -NPU_DEVICE_ERRNO_IO;
+  }
+  if (ret == 0 || !(pfd.revents & POLLIN)) {
+    return -NPU_DEVICE_ERRNO_WAITLAUNCH;
+  }
+
+  uint32_t event_token = 0;
+  ssize_t n = read(device->xdma_event_fd, &event_token, sizeof(event_token));
+  if (n < 0 && errno == EAGAIN) {
+    return -NPU_DEVICE_ERRNO_WAITLAUNCH;
+  }
+  if (n < 0) {
+    return -NPU_DEVICE_ERRNO_IO;
+  }
+  return NPU_DEVICE_SUCCESS;
+}
+
+static ssize_t npu_user_read(const struct NPUDeviceState *device, off_t offset, void *buf,
+                             size_t size) {
+  if (device == NULL || buf == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
+  if (device->xdma_user_fd < 0) {
+    return -NPU_DEVICE_ERRNO_UNSUPPORTED;
+  }
+  ssize_t ret = pread(device->xdma_user_fd, buf, size, offset);
+  return ret == (ssize_t)size ? ret : -NPU_DEVICE_ERRNO_IO;
+}
+
+static ssize_t npu_user_write(const struct NPUDeviceState *device, off_t offset,
+                              const void *buf, size_t size) {
+  if (device == NULL || buf == NULL) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+  if (!device->valid) {
+    return -NPU_DEVICE_ERRNO_UNINITIALIZED;
+  }
+  if (device->xdma_user_fd < 0) {
+    return -NPU_DEVICE_ERRNO_UNSUPPORTED;
+  }
+  ssize_t ret = pwrite(device->xdma_user_fd, buf, size, offset);
+  return ret == (ssize_t)size ? ret : -NPU_DEVICE_ERRNO_IO;
+}
+
+ssize_t npu_intc_read_status(const struct NPUDeviceState *device, uint32_t *status) {
+  return npu_user_read(device, NPU_INTC_STATUS_OFF, status, sizeof(*status));
+}
+
+ssize_t npu_intc_enable(const struct NPUDeviceState *device, uint32_t mask) {
+  return npu_user_write(device, NPU_INTC_ENABLE_OFF, &mask, sizeof(mask));
+}
+
+ssize_t npu_intc_read_mailbox(const struct NPUDeviceState *device, int core_id,
+                              uint64_t *mailbox) {
+  if (core_id < 0) {
+    return -NPU_DEVICE_ERRNO_INVALID_ARGS;
+  }
+  return npu_user_read(device,
+                       NPU_INTC_MAILBOX0_OFF + (off_t)core_id * NPU_INTC_MAILBOX_STRIDE,
+                       mailbox, sizeof(*mailbox));
+}
+
+ssize_t npu_intc_clear(const struct NPUDeviceState *device, uint32_t mask) {
+  return npu_user_write(device, NPU_INTC_CLEAR_OFF, &mask, sizeof(mask));
 }
 
 // Any state -> NPU_DEVICE_ERRNO_EMPTY
@@ -309,13 +438,13 @@ ssize_t npu_abort(const struct NPUDeviceState *device) {
 
   ssize_t ret;
 
-  ret = npu_mmio_write64(device, MMIO_ADDR_BOOT_ADDR_REG, 0x10000);
+  ret = npu_mmio_write64(device, npu_core_boot_addr_reg(device), 0x10000);
   if (ret < 0) {
     return ret;
   }
 
   // write clint msip to start
-  ret = npu_mmio_write32(device, MMIO_ADDR_CLINT, 1);
+  ret = npu_mmio_write32(device, npu_core_clint_addr(device), 1);
   return ret;
 }
 

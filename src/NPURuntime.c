@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <stddef.h>
 
 #include "NPUDriver.h"
 
@@ -1112,6 +1113,191 @@ ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     usleep(100); // 0.1ms
   }
   return ret;
+}
+
+ssize_t npu_runtime_multi_kernel_start_ex(
+    const struct NPURuntimeState *runtime,
+    size_t core_count,
+    const int core_ids[],
+    const struct NPUKernelDesc *kernel_descs[],
+    int *kernel_rets,
+    const size_t arg_counts[],
+    const uint64_t *per_core_args[]) {
+  if (runtime == NULL || core_count == 0 || core_ids == NULL ||
+      kernel_descs == NULL || arg_counts == NULL) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  for (size_t i = 0; i < core_count; i++) {
+    if (core_ids[i] < 0 || kernel_descs[i] == NULL ||
+        arg_counts[i] > NPU_MAX_KERNEL_ARGS ||
+        (arg_counts[i] != 0 && (per_core_args == NULL || per_core_args[i] == NULL))) {
+      return NPU_ERROR_INVALID_ARGUMENT;
+    }
+    for (size_t j = 0; j < i; j++) {
+      if (core_ids[i] == core_ids[j]) {
+        return NPU_ERROR_INVALID_ARGUMENT;
+      }
+    }
+  }
+
+  struct GeneralEntryArgs general_entry_args[NPU_MAX_KERNEL_ARGS];
+  struct NPUDeviceState core_devices[NPU_MAX_KERNEL_ARGS];
+  int done[NPU_MAX_KERNEL_ARGS] = {0};
+  size_t done_count = 0;
+  uint32_t core_mask = 0;
+
+  for (size_t i = 0; i < core_count; i++) {
+    memset(&general_entry_args[i], 0, sizeof(general_entry_args[i]));
+    general_entry_args[i].kernel_entry = kernel_descs[i]->entry;
+    general_entry_args[i].arg_count = arg_counts[i];
+    general_entry_args[i].ret = 0xdeadbeaf;
+    general_entry_args[i].putchar_buf = runtime->printchar_base;
+    general_entry_args[i].putchar_buflength = runtime->printchar_size;
+    general_entry_args[i].putchar_wptr = 0;
+    for (size_t a = 0; a < arg_counts[i]; a++) {
+      general_entry_args[i].args[a] = per_core_args[i][a];
+    }
+
+    core_devices[i] = runtime->dev_state;
+    core_devices[i].core_id = core_ids[i];
+    core_mask |= 1u << core_ids[i];
+
+    ssize_t ret = npu_abort(&core_devices[i]);
+    if (ret < 0) {
+      return NPU_ERROR_DEVICE_FAILURE;
+    }
+
+    uint64_t args_addr = runtime->kernel_set_desc.args_ptr +
+                         (uint64_t)core_ids[i] * sizeof(struct GeneralEntryArgs);
+    size_t args_size = offsetof(struct GeneralEntryArgs, args) +
+                       arg_counts[i] * sizeof(uint64_t);
+    ret = npu_memcpy_to_dev(&core_devices[i], args_addr,
+                            &general_entry_args[i], args_size);
+    if (ret < 0) {
+      return NPU_ERROR_DEVICE_FAILURE;
+    }
+  }
+
+  int use_interrupt = runtime->dev_state.xdma_event_fd >= 0 &&
+                      runtime->dev_state.xdma_user_fd >= 0;
+  if (use_interrupt) {
+    (void)npu_intc_clear(&runtime->dev_state, core_mask);
+    if (npu_intc_enable(&runtime->dev_state, core_mask) < 0) {
+      use_interrupt = 0;
+    }
+  }
+
+  for (size_t i = 0; i < core_count; i++) {
+    ssize_t ret = npu_start(&core_devices[i], runtime->kernel_set_desc.general_entry);
+    if (ret < 0) {
+      return ret;
+    }
+  }
+
+  while (done_count < core_count) {
+    if (use_interrupt) {
+      ssize_t wait_ret = npu_wait_interrupt(&runtime->dev_state, 1000);
+      if (wait_ret == NPU_DEVICE_SUCCESS) {
+        uint32_t status = 0;
+        ssize_t ret = npu_intc_read_status(&runtime->dev_state, &status);
+        if (ret < 0) {
+          use_interrupt = 0;
+        } else {
+          uint32_t clear_mask = 0;
+          for (size_t i = 0; i < core_count; i++) {
+            if (done[i]) {
+              continue;
+            }
+            uint32_t bit = 1u << core_ids[i];
+            if ((status & bit) == 0) {
+              continue;
+            }
+
+            uint64_t mailbox = 0;
+            (void)npu_intc_read_mailbox(&runtime->dev_state, core_ids[i], &mailbox);
+            uint64_t args_addr = runtime->kernel_set_desc.args_ptr +
+                                 (uint64_t)core_ids[i] * sizeof(struct GeneralEntryArgs);
+            size_t args_size = offsetof(struct GeneralEntryArgs, args);
+            ret = npu_memcpy_from_dev(&core_devices[i], &general_entry_args[i],
+                                      args_addr, args_size);
+            if (ret < 0) {
+              return NPU_ERROR_DEVICE_FAILURE;
+            }
+            if (kernel_rets) {
+              kernel_rets[i] = general_entry_args[i].ret;
+            }
+            done[i] = 1;
+            done_count++;
+            clear_mask |= bit;
+          }
+          if (clear_mask != 0) {
+            (void)npu_intc_clear(&runtime->dev_state, clear_mask);
+          }
+        }
+      } else if (wait_ret == -NPU_DEVICE_ERRNO_UNSUPPORTED) {
+        use_interrupt = 0;
+      } else if (wait_ret == -NPU_DEVICE_ERRNO_IO) {
+        return NPU_ERROR_DEVICE_FAILURE;
+      }
+    }
+
+    for (size_t i = 0; i < core_count; i++) {
+      if (done[i]) {
+        continue;
+      }
+
+      ssize_t ret = npu_check(&core_devices[i]);
+      if (ret == -NPU_DEVICE_ERRNO_IO) {
+        return NPU_ERROR_DEVICE_FAILURE;
+      }
+      if (ret == -NPU_DEVICE_ERRNO_EMPTY) {
+        uint64_t args_addr = runtime->kernel_set_desc.args_ptr +
+                             (uint64_t)core_ids[i] * sizeof(struct GeneralEntryArgs);
+        size_t args_size = offsetof(struct GeneralEntryArgs, args);
+        ret = npu_memcpy_from_dev(&core_devices[i], &general_entry_args[i],
+                                  args_addr, args_size);
+        if (ret < 0) {
+          return NPU_ERROR_DEVICE_FAILURE;
+        }
+        if (kernel_rets) {
+          kernel_rets[i] = general_entry_args[i].ret;
+        }
+        done[i] = 1;
+        done_count++;
+      }
+    }
+    if (done_count < core_count) {
+      usleep(100);
+    }
+  }
+
+  return NPU_SUCCESS;
+}
+
+ssize_t npu_runtime_multi_kernel_start_auto(
+    const struct NPURuntimeState *runtime,
+    size_t core_count,
+    const struct NPUKernelDesc *kernel_descs[],
+    int *kernel_rets,
+    const size_t arg_counts[],
+    const uint64_t *per_core_args[],
+    int *allocated_core_ids) {
+  if (core_count == 0 || core_count > NPU_MAX_KERNEL_ARGS) {
+    return NPU_ERROR_INVALID_ARGUMENT;
+  }
+
+  int core_ids[NPU_MAX_KERNEL_ARGS];
+  for (size_t i = 0; i < core_count; i++) {
+    core_ids[i] = (int)i;
+    if (allocated_core_ids) {
+      allocated_core_ids[i] = core_ids[i];
+    }
+  }
+
+  return npu_runtime_multi_kernel_start_ex(runtime, core_count, core_ids,
+                                          kernel_descs, kernel_rets,
+                                          arg_counts, per_core_args);
 }
 
 ssize_t npu_runtime_get_kernel_desc(const struct NPURuntimeState *runtime,

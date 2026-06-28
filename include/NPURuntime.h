@@ -11,6 +11,8 @@ extern "C" {
 #endif
 
 #define NPU_MAX_KERNEL_ARGS 30
+#define NPU_CORE_ID_AUTO (-1)
+#define NPU_CORE_ID_AUTO (-1)
 #define NPU_PRINTCHAR_BUF_SIZE 0x1000000
 
 // Device Kernel Set Description Structure
@@ -130,6 +132,23 @@ ssize_t npu_runtime_load_kernelset_from_memory(
 ssize_t npu_runtime_kernel_start(const struct NPURuntimeState *runtime,
     const struct NPUKernelDesc *kernel_desc,
     int* kernel_ret, size_t arg_count, ...);
+
+ssize_t npu_runtime_multi_kernel_start_ex(
+    const struct NPURuntimeState *runtime,
+    size_t core_count,
+    const int core_ids[],
+    const struct NPUKernelDesc *kernel_descs[],
+    int *kernel_rets,
+    const size_t arg_counts[],
+    const uint64_t *per_core_args[]);
+ssize_t npu_runtime_multi_kernel_start_auto(
+    const struct NPURuntimeState *runtime,
+    size_t core_count,
+    const struct NPUKernelDesc *kernel_descs[],
+    int *kernel_rets,
+    const size_t arg_counts[],
+    const uint64_t *per_core_args[],
+    int *allocated_core_ids);
 
 // Device Memory Management
 ssize_t npu_mm_init(void** mm, uint64_t heap_start, uint64_t heap_end);

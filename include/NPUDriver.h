@@ -16,8 +16,11 @@ extern "C"
   {
     // TODO: Define needed stateful data for the NPU Device here.
     size_t xdma_id;
+    int core_id;
     int xdma_c2h_fd;
     int xdma_h2c_fd;
+    int xdma_user_fd;
+    int xdma_event_fd;
     uint8_t valid;
   };
 
@@ -52,6 +55,11 @@ extern "C"
   ssize_t npu_check(const struct NPUDeviceState *device);                        // Check device state: WaitLaunch / Busy / Empty
   ssize_t npu_abort(const struct NPUDeviceState *device);                        // Stop Kernel Excution
   ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address); // Start Kernel Excution
+  ssize_t npu_wait_interrupt(const struct NPUDeviceState *device, int timeout_ms);
+  ssize_t npu_intc_enable(const struct NPUDeviceState *device, uint32_t mask);
+  ssize_t npu_intc_read_status(const struct NPUDeviceState *device, uint32_t *status);
+  ssize_t npu_intc_read_mailbox(const struct NPUDeviceState *device, int core_id, uint64_t *mailbox);
+  ssize_t npu_intc_clear(const struct NPUDeviceState *device, uint32_t mask);
 
   // function return negative values on error
   typedef enum
