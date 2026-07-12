@@ -9,6 +9,7 @@
 #include <string.h>
 #include <errno.h>
 #include <poll.h>
+#include <time.h>
 
 #include "NPUDriver.h"
 
@@ -41,12 +42,96 @@
 #define NPU_INTC_MAILBOX0_OFF 0x10
 #define NPU_INTC_MAILBOX_STRIDE 8
 
+#ifndef NPU_ABORT_ACK_TIMEOUT_MS
+/* Per protocol phase: quiesce, ROM acknowledgement, and CRT handoff each get
+ * their own bounded wait. */
+#define NPU_ABORT_ACK_TIMEOUT_MS 1000
+#endif
+
+#ifndef NPU_ABORT_ACK_POLL_NS
+#define NPU_ABORT_ACK_POLL_NS 100000
+#endif
+
 static inline uint64_t npu_core_boot_addr_reg(const struct NPUDeviceState *device) {
   return MMIO_ADDR_BOOT_ADDR_REG + (uint64_t)device->core_id * MMIO_BOOT_ADDR_PER_CORE_SIZE;
 }
 
 static inline uint64_t npu_core_clint_addr(const struct NPUDeviceState *device) {
   return MMIO_ADDR_CLINT + (uint64_t)device->core_id * MMIO_CLINT_PER_CORE_SIZE;
+}
+
+static int64_t npu_elapsed_ms(const struct timespec *start,
+                              const struct timespec *finish) {
+  int64_t seconds = finish->tv_sec - start->tv_sec;
+  int64_t nanoseconds = finish->tv_nsec - start->tv_nsec;
+  return seconds * 1000 + nanoseconds / 1000000;
+}
+
+static ssize_t npu_wait_for_msip_clear(const struct NPUDeviceState *device) {
+  struct timespec start;
+  if (clock_gettime(CLOCK_MONOTONIC, &start) < 0) {
+    return -NPU_DEVICE_ERRNO_IO;
+  }
+
+  for (;;) {
+    uint32_t msip = 0;
+    ssize_t ret = npu_mmio_read32(device, npu_core_clint_addr(device), &msip);
+    if (ret < 0) {
+      return ret;
+    }
+    if ((msip & 1u) == 0) {
+      return ret;
+    }
+
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
+    if (npu_elapsed_ms(&start, &now) >= NPU_ABORT_ACK_TIMEOUT_MS) {
+      return -NPU_DEVICE_ERRNO_TIMEOUT;
+    }
+
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = NPU_ABORT_ACK_POLL_NS};
+    while (nanosleep(&delay, &delay) < 0) {
+      if (errno != EINTR) {
+        return -NPU_DEVICE_ERRNO_IO;
+      }
+    }
+  }
+}
+
+static ssize_t npu_wait_for_boot_handoff(const struct NPUDeviceState *device) {
+  struct timespec start;
+  if (clock_gettime(CLOCK_MONOTONIC, &start) < 0) {
+    return -NPU_DEVICE_ERRNO_IO;
+  }
+
+  for (;;) {
+    uint64_t boot_address = 0;
+    ssize_t ret = npu_mmio_read64(device, npu_core_boot_addr_reg(device),
+                                  &boot_address);
+    if (ret < 0) {
+      return ret;
+    }
+    if (boot_address == 0 || boot_address == 0x10000) {
+      return ret;
+    }
+
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+      return -NPU_DEVICE_ERRNO_IO;
+    }
+    if (npu_elapsed_ms(&start, &now) >= NPU_ABORT_ACK_TIMEOUT_MS) {
+      return -NPU_DEVICE_ERRNO_TIMEOUT;
+    }
+
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = NPU_ABORT_ACK_POLL_NS};
+    while (nanosleep(&delay, &delay) < 0) {
+      if (errno != EINTR) {
+        return -NPU_DEVICE_ERRNO_IO;
+      }
+    }
+  }
 }
 
 #ifdef __cplusplus
@@ -316,10 +401,21 @@ ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
   if (!device->valid) {
     return -NPU_DEVICE_ERRNO_UNINITIALIZED;
   }
+  if (boot_address == 0 || boot_address == 0x10000) {
+    return -NPU_DEVICE_ERRNO_INVALID_ADDRESS;
+  }
 
   ssize_t ret;
   ret = npu_check(device);
   if(ret != -NPU_DEVICE_ERRNO_EMPTY) {
+    return ret;
+  }
+
+  /* A mailbox value is reusable only after the prior doorbell is clear. The
+   * boot ROM clears MSIP after latching its mailbox value, so this wait also
+   * proves that a preceding command no longer owns the mailbox. */
+  ret = npu_wait_for_msip_clear(device);
+  if (ret < 0) {
     return ret;
   }
 
@@ -330,7 +426,23 @@ ssize_t npu_start(const struct NPUDeviceState *device, uint64_t boot_address) {
 
   // write clint msip to start
   ret = npu_mmio_write32(device, npu_core_clint_addr(device), 1);
-  return ret;
+  if (ret < 0) {
+    return ret;
+  }
+  ssize_t command_ret = ret;
+
+  /* MSIP clear proves that the ROM latched the launch address. The subsequent
+   * mailbox transition to Busy (0) or Empty (0x10000) proves that CRT can no
+   * longer overwrite a following command with its late Busy write. */
+  ret = npu_wait_for_msip_clear(device);
+  if (ret < 0) {
+    return ret;
+  }
+  ret = npu_wait_for_boot_handoff(device);
+  if (ret < 0) {
+    return ret;
+  }
+  return command_ret;
 }
 
 ssize_t npu_wait_interrupt(const struct NPUDeviceState *device, int timeout_ms) {
@@ -424,7 +536,7 @@ ssize_t npu_intc_clear(const struct NPUDeviceState *device, uint32_t mask) {
   return npu_user_write(device, NPU_INTC_CLEAR_OFF, &mask, sizeof(mask));
 }
 
-// Any state -> NPU_DEVICE_ERRNO_EMPTY
+// Request a transition from a valid serialized state to NPU_DEVICE_ERRNO_EMPTY.
 ssize_t npu_abort(const struct NPUDeviceState *device) {
   // write the boot address to the start register
 
@@ -438,6 +550,17 @@ ssize_t npu_abort(const struct NPUDeviceState *device) {
 
   ssize_t ret;
 
+  /* Do not let an older MSIP acknowledgement satisfy this abort. Once MSIP is
+   * clear, the previous ROM handler has already consumed its mailbox value. */
+  ret = npu_wait_for_msip_clear(device);
+  if (ret < 0) {
+    return ret;
+  }
+  ret = npu_wait_for_boot_handoff(device);
+  if (ret < 0) {
+    return ret;
+  }
+
   ret = npu_mmio_write64(device, npu_core_boot_addr_reg(device), 0x10000);
   if (ret < 0) {
     return ret;
@@ -445,7 +568,14 @@ ssize_t npu_abort(const struct NPUDeviceState *device) {
 
   // write clint msip to start
   ret = npu_mmio_write32(device, npu_core_clint_addr(device), 1);
-  return ret;
+  if (ret < 0) {
+    return ret;
+  }
+
+  /* The boot ROM reads the mailbox, fences that read, then clears MSIP.
+   * Waiting for the clear prevents a following launch from overwriting the
+   * abort mailbox while the ROM is still consuming it. */
+  return npu_wait_for_msip_clear(device);
 }
 
 #ifdef __cplusplus

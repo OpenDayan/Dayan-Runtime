@@ -74,6 +74,7 @@ extern "C"
     NPU_DEVICE_ERRNO_BUSY,
     NPU_DEVICE_ERRNO_WAITLAUNCH,
     NPU_DEVICE_ERRNO_EMPTY,
+    NPU_DEVICE_ERRNO_TIMEOUT,
   } NPUDeviceErrno_t;
 
 #ifdef __cplusplus
